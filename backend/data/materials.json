@@ -1,0 +1,80 @@
+[
+    {
+        "id": "steel_1018_cd",
+        "name": "Steel 1018 (Cold Drawn)",
+        "category": "Metal",
+        "sub_category": "Carbon Steel",
+        "density": 7870,
+        "yield_strength": 370000000,
+        "ultimate_strength": 440000000,
+        "elastic_modulus": 205000000000,
+        "thermal_conductivity": 51.9,
+        "cost_approx_usd_per_kg": 1.50,
+        "description": "Common low-carbon steel, good weldability and machinability."
+    },
+    {
+        "id": "steel_4340_norm",
+        "name": "Steel 4340 (Normalized)",
+        "category": "Metal",
+        "sub_category": "Alloy Steel",
+        "density": 7850,
+        "yield_strength": 860000000,
+        "ultimate_strength": 1280000000,
+        "elastic_modulus": 210000000000,
+        "thermal_conductivity": 44.5,
+        "cost_approx_usd_per_kg": 3.00,
+        "description": "High-strength alloy steel, often used in aerospace."
+    },
+    {
+        "id": "al_6061_t6",
+        "name": "Aluminum 6061-T6",
+        "category": "Metal",
+        "sub_category": "Aluminum Alloy",
+        "density": 2700,
+        "yield_strength": 276000000,
+        "ultimate_strength": 310000000,
+        "elastic_modulus": 68900000000,
+        "thermal_conductivity": 167,
+        "cost_approx_usd_per_kg": 2.50,
+        "description": "Standard structural aluminum, corrosion resistant."
+    },
+    {
+        "id": "al_7075_t6",
+        "name": "Aluminum 7075-T6",
+        "category": "Metal",
+        "sub_category": "Aluminum Alloy",
+        "density": 2810,
+        "yield_strength": 503000000,
+        "ultimate_strength": 572000000,
+        "elastic_modulus": 71700000000,
+        "thermal_conductivity": 130,
+        "cost_approx_usd_per_kg": 4.50,
+        "description": "High-strength aluminum, comparable to steel."
+    },
+    {
+        "id": "ti_6al_4v",
+        "name": "Titanium Ti-6Al-4V (Grade 5)",
+        "category": "Metal",
+        "sub_category": "Titanium Alloy",
+        "density": 4430,
+        "yield_strength": 880000000,
+        "ultimate_strength": 950000000,
+        "elastic_modulus": 113800000000,
+        "thermal_conductivity": 6.7,
+        "cost_approx_usd_per_kg": 30.00,
+        "description": "Workhorse titanium alloy, high strength-to-weight ratio."
+    },
+    {
+        "id": "abs_plastic",
+        "name": "ABS Plastic (Generic)",
+        "category": "Plastic",
+        "sub_category": "Thermoplastic",
+        "density": 1040,
+        "yield_strength": 40000000,
+        "ultimate_strength": 45000000,
+        "elastic_modulus": 2300000000,
+        "thermal_conductivity": 0.25,
+        "cost_approx_usd_per_kg": 1.20,
+        "description": "Common thermoplastic, impact resistant."
+    }
+]

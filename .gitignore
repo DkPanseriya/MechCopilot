@@ -1,0 +1,32 @@
+# --- Secrets / environment ---
+.env
+*.env
+!*.env.example
+backend/.env
+
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+
+# --- Local dev data ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Node / Next (frontend has its own .gitignore too) ---
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
