@@ -15,6 +15,8 @@ class Material(BaseModel):
     yield_strength: float
     ultimate_strength: float
     elastic_modulus: float
+    poisson: Optional[float] = None
+    thermal_expansion: Optional[float] = None
     thermal_conductivity: float
     cost_approx_usd_per_kg: float
     description: str

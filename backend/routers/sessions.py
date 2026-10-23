@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
-from database import get_db, Session as DbSession, Message as DbMessage
+from database import get_db, SessionLocal, Session as DbSession, Message as DbMessage
 import os
 import sys
+import traceback
 # Add parent dir to path to allow importing modules from backend root
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -121,98 +122,50 @@ from fastapi.responses import StreamingResponse
 import json
 
 @router.post("/{session_id}/chat")
-async def chat_in_session(session_id: int, request: ChatRequest, db: Session = Depends(get_db)):
-    # 1. Fetch Session
+def chat_in_session(session_id: int, request: ChatRequest, db: Session = Depends(get_db)):
+    import copilot
+
     session = db.query(DbSession).filter(DbSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    
-    # 2. Save User Message
-    user_msg = DbMessage(session_id=session_id, role="user", content=request.message)
-    db.add(user_msg)
+
+    history = [{"role": m.role, "content": m.content or "", "tool_data": m.tool_data}
+               for m in session.messages]
+    db.add(DbMessage(session_id=session_id, role="user", content=request.message))
     db.commit()
-    
-    # 3. Construct Prompt (Logic unchanged)
-    # 3. Construct Prompt (Logic unchanged)
-    manifest = get_manifest()
-    manifest_str = str(manifest)
-    system_prompt = get_system_prompt(request.tier, request.user_profile, physics_manifest=manifest_str)
-    if session.context_type and session.context_type != "general":
-         context_instruction = f"\n\nFOCUS CONTEXT: You are assisting with {session.context_type}. Focus all answers on this domain."
-         system_prompt += context_instruction
+    rename = not session.is_custom_title and (session.title or "") in ("", "New Chat", "New Design Session")
 
-    prompt_text = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_prompt}<|eot_id|>"
-    
-    db.refresh(session)
-    history = session.messages
-    for msg in history:
-        # Avoid duplicate user message if it's already in history (it should be)
-        prompt_text += f"<|start_header_id|>{msg.role}<|end_header_id|>\n\n{msg.content}<|eot_id|>"
-    prompt_text += "<|start_header_id|>assistant<|end_header_id|>\n\n"
+    def sse(event: dict) -> str:
+        return f"data: {json.dumps(event)}\n\n"
 
-    # Role-based history for the structured (OpenAI) path.
-    conv_messages = [{"role": m.role, "content": m.content or ""} for m in history]
-
-    # 4. Stream Generator
-    async def generate_stream():
-        if not os.getenv("REPLICATE_API_TOKEN") or not os.getenv("OPENAI_API_KEY"):
-            from dotenv import load_dotenv
-            load_dotenv()
-
-        content = ""
-        ui_spec = None
-        suggested_title = None
-
+    # Sync generator: Starlette iterates it in a worker thread, so blocking
+    # model calls never stall the event loop.
+    def generate_stream():
+        final = None
         try:
-            if model_provider.use_demo():
-                # Offline deterministic provider (default): no external LLM.
-                result = model_provider.generate_demo(conv_messages)
-                content = result["narration"]
-                ui_spec = result["ui_spec"]
-                yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
-            elif model_provider.supports_structured():
-                # Reliable path: validated UISpec, no JSON scraping.
-                result = model_provider.generate_structured(
-                    conv_messages, system_prompt, request.tier
-                )
-                content = result["narration"]
-                ui_spec = result["ui_spec"]
-                # Emit narration in one event (structured path is non-streaming).
-                yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
-            else:
-                # Fallback: Replicate Llama streaming + validate extracted JSON.
-                model_id = "meta/meta-llama-3-70b-instruct" if request.tier == "deep" else "meta/meta-llama-3-8b-instruct"
-                temp = 0.7 if request.tier == "deep" else 0.6
-                full_response = ""
-                for chunk in run_llama(prompt_text, model_id, temp):
-                    full_response += chunk
-                    yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+            for event in copilot.respond(request.message, history, request.tier, request.user_profile):
+                if event["type"] == "final":
+                    final = event
+                    continue
+                yield sse(event)
+        except Exception as e:  # never leave the client hanging
+            traceback.print_exc()
+            yield sse({"type": "error", "content": f"{type(e).__name__}: {e}"})
 
-                content, _legacy_tool, suggested_title = parse_llm_response(full_response)
-                ui_spec = model_provider.extract_ui_spec_from_text(full_response)
-                if ui_spec:
-                    yield f"data: {json.dumps({'type': 'replace_content', 'content': content})}\n\n"
-
-            tool_dict = to_tool_data(ui_spec) if ui_spec else None
-            if tool_dict:
-                yield f"data: {json.dumps({'type': 'tool', 'data': tool_dict})}\n\n"
-
-            # Persist assistant message.
-            db.add(DbMessage(
-                session_id=session_id,
-                role="assistant",
-                content=content or "",
-                tool_data=tool_dict,
-            ))
-            if suggested_title and not session.is_custom_title:
-                sess = db.query(DbSession).filter(DbSession.id == session_id).first()
-                if sess:
-                    sess.title = suggested_title
-            db.commit()
-
-        except Exception as e:
-            print(f"Stream Error: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+        if final is not None:
+            store = SessionLocal()
+            try:
+                store.add(DbMessage(session_id=session_id, role="assistant",
+                                    content=final["content"], tool_data=final["tool_data"]))
+                if rename:
+                    sess = store.query(DbSession).filter(DbSession.id == session_id).first()
+                    title = (final.get("title") or request.message).strip()
+                    if sess and title:
+                        sess.title = title[:60]
+                store.commit()
+            finally:
+                store.close()
+        yield sse({"type": "done"})
 
     return StreamingResponse(generate_stream(), media_type="text/event-stream")
 

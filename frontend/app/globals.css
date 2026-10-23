@@ -236,19 +236,15 @@ body {
   font-weight: 400;
 }
 
-/* Blockquotes - prominent styling */
+/* Blockquotes - quiet aside */
 .prose blockquote {
-  border-left: 4px solid #3b82f6;
-  padding-left: 1.25rem;
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
-  margin-left: 0;
-  margin-top: 1rem;
-  margin-bottom: 1.5rem;
-  font-style: italic;
+  border: 1px solid var(--border);
+  padding: 0.6rem 0.9rem;
+  margin: 1rem 0 1.25rem;
+  font-size: 0.8125rem;
   color: var(--muted-foreground);
-  background-color: var(--muted);
-  border-radius: 0 0.5rem 0.5rem 0;
+  background-color: color-mix(in srgb, var(--muted) 45%, transparent);
+  border-radius: 0.6rem;
 }
 
 .prose blockquote p {

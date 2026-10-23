@@ -128,8 +128,25 @@ class MaterialCardSpec(SpecBase):
     material_key: str
 
 
+class CalcSpec(SpecBase):
+    """A calculator from the engineering library, prefilled with inputs."""
+    type: Literal["calc"] = "calc"
+    calculator: str
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+    purpose: Optional[str] = None
+
+    @field_validator("calculator")
+    @classmethod
+    def _calculator_exists(cls, v: str) -> str:
+        from engineering.registry import CATALOG
+        if v not in CATALOG:
+            raise ValueError(f"Unknown calculator '{v}'.")
+        return v
+
+
 UISpec = Annotated[
     Union[
+        CalcSpec,
         CalculatorSpec,
         WorkflowSpec,
         ChartSpec,

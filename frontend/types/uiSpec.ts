@@ -94,7 +94,16 @@ export const materialCardSpecSchema = z.object({
     ...specBase,
 });
 
+export const calcSpecSchema = z.object({
+    type: z.literal("calc"),
+    calculator: z.string(),
+    inputs: z.record(z.string(), z.any()).default({}),
+    purpose: z.string().nullish(),
+    ...specBase,
+});
+
 export const uiSpecSchema = z.discriminatedUnion("type", [
+    calcSpecSchema,
     calculatorSpecSchema,
     workflowSpecSchema,
     chartSpecSchema,
@@ -105,6 +114,7 @@ export const uiSpecSchema = z.discriminatedUnion("type", [
 ]);
 
 export type UISpec = z.infer<typeof uiSpecSchema>;
+export type CalcSpec = z.infer<typeof calcSpecSchema>;
 export type CalculatorSpec = z.infer<typeof calculatorSpecSchema>;
 export type WorkflowSpec = z.infer<typeof workflowSpecSchema>;
 export type ChartSpec = z.infer<typeof chartSpecSchema>;

@@ -60,7 +60,7 @@ export default function MaterialsPage() {
         <main className="flex min-h-screen bg-background text-foreground font-sans p-8 ml-64">
             <div className="max-w-6xl mx-auto w-full">
                 <header className="mb-8">
-                    <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-cyan-400 mb-2">
+                    <h1 className="text-3xl font-semibold text-foreground mb-2">
                         Materials Library
                     </h1>
                     <p className="text-muted-foreground">

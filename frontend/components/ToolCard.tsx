@@ -194,7 +194,7 @@ export default function ToolCard({ tool, onClose }: DynamicToolProps) {
     return (
         <div className="bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-xl w-full max-w-md my-4 animate-in fade-in slide-in-from-bottom-4 duration-500 ring-1 ring-black/5 dark:ring-white/5 transition-colors">
             <div className="flex justify-between items-center mb-4 border-b border-border pb-3">
-                <h3 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-cyan-400 flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                     {isWorkflow ? <Calculator className="text-blue-500" size={20} /> : null}
                     {isWorkflow ? tool.workflow_name : tool.tool_name}
                 </h3>

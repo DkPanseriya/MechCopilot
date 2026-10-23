@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { PlusCircle, MessageSquare, History, Trash2, Pencil, Check, X, Database } from "lucide-react";
+import { PlusCircle, MessageSquare, History, Trash2, Pencil, Check, X, Database, Calculator } from "lucide-react";
 import { Session } from "@/types";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { API_BASE } from "@/lib/api";
@@ -15,9 +15,29 @@ export default function Sidebar() {
     const router = useRouter();
     const pathname = usePathname();
 
+    const [status, setStatus] = useState<{ provider: string; model: string; configured: boolean; calculators: number; key_valid: boolean | null } | null>(null);
+
     useEffect(() => {
         fetchSessions();
     }, [pathname]); // Refresh when path changes (e.g. after creating new session)
+
+    useEffect(() => {
+        const refresh = () => fetchSessions();
+        window.addEventListener("mech:sessions-changed", refresh);
+        fetch(`${API_BASE}/api/status`).then((r) => r.json()).then(setStatus).catch(() => setStatus(null));
+        return () => window.removeEventListener("mech:sessions-changed", refresh);
+    }, []);
+
+    // "anthropic/claude-4.5-haiku" -> "Claude Haiku 4.5"; other slugs are shown as-is.
+    const modelName = (m: string) => {
+        const slug = m.split("/").pop() || m;
+        const parts = slug.split("-");
+        if (parts[0] !== "claude") return slug;
+        const version = parts.find((p) => /^\d+(\.\d+)?$/.test(p)) || "";
+        const family = parts.find((p) => /^[a-z]+$/.test(p) && p !== "claude") || "";
+        return `Claude ${family.charAt(0).toUpperCase()}${family.slice(1)} ${version}`.replace(/\s+/g, " ").trim();
+    };
+    const keyRejected = status?.configured && status.key_valid === false;
 
     const fetchSessions = async () => {
         try {
@@ -83,17 +103,26 @@ export default function Sidebar() {
     return (
         <div suppressHydrationWarning className="w-64 border-r border-border p-4 flex flex-col bg-muted/40 h-screen fixed left-0 top-0 overflow-y-auto z-50 transition-colors duration-300">
             <div className="mb-8" suppressHydrationWarning>
-                <Link href="/" className="flex items-center gap-2">
-                    <h1 className="text-xl font-bold tracking-tight text-blue-500">MechPartner <span className="text-xs text-gray-500 font-normal">v0.2</span></h1>
-                </Link>
+                <a href="/" className="flex items-center gap-2">
+                    <h1 className="text-xl font-bold tracking-tight text-foreground">Mech<span className="text-blue-500">Partner</span> <span className="text-xs text-muted-foreground font-normal">v1.0</span></h1>
+                </a>
             </div>
 
-            <Link
+            {/* Full navigation so the chat state always resets, even if we're already on "/". */}
+            <a
                 href="/"
                 className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all mb-2"
             >
                 <PlusCircle size={16} />
                 New Design Session
+            </a>
+
+            <Link
+                href="/calculators"
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all mb-1 ${pathname?.startsWith("/calculators") ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+            >
+                <Calculator size={16} />
+                Calculator Library
             </Link>
 
             <Link
@@ -162,14 +191,25 @@ export default function Sidebar() {
 
             <div className="mt-auto pt-4 border-t border-border" suppressHydrationWarning>
                 <div className="flex items-center gap-3 px-2">
-                    <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">JD</div>
-                    <div className="text-sm">
-                        <div className="font-medium text-foreground">John Doe</div>
-                        <div className="text-[10px] text-muted-foreground uppercase">Pro Plan</div>
+                    <div className="min-w-0 flex-1" title={keyRejected
+                        ? "Replicate rejected REPLICATE_API_TOKEN in backend/.env. Paste a valid token (starts with r8_) and restart the backend."
+                        : status?.configured
+                            ? `Language model: ${status.model} via ${status.provider}`
+                            : "No API key found. Add REPLICATE_API_TOKEN to backend/.env and restart the backend for the full copilot. Calculators work without it."}>
+                        <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${status === null || keyRejected ? "bg-rose-500" : status.configured ? "bg-emerald-500" : "bg-amber-500"}`} />
+                            <span className="truncate">
+                                {status === null ? "Backend offline" : keyRejected ? "API key rejected" : status.configured ? modelName(status.model) : "Offline mode"}
+                            </span>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+                            {status === null ? "Start it on port 8001"
+                                : keyRejected ? "Fix the token in backend/.env"
+                                : status.configured ? `via ${status.provider} · ${status.calculators} calculators`
+                                : "Add a Replicate key to enable AI"}
+                        </div>
                     </div>
-                    <div className="ml-auto">
-                        <ThemeToggle />
-                    </div>
+                    <ThemeToggle />
                 </div>
             </div>
         </div >

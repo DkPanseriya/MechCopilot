@@ -30,3 +30,8 @@ build/
 Thumbs.db
 .vscode/
 .idea/
+
+# --- User data / tool caches ---
+backend/data/user/
+frontend/.impeccable/
+*.log

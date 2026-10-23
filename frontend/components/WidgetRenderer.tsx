@@ -4,6 +4,7 @@ import ToolCard from "@/components/ToolCard";
 import ChartWidget from "@/components/ChartWidget";
 import FigureWidget from "@/components/FigureWidget";
 import SelectorWidget from "@/components/SelectorWidget";
+import CalculatorView from "@/components/calc/CalculatorView";
 import { parseUISpec } from "@/types/uiSpec";
 import type { ToolData } from "@/types";
 
@@ -20,6 +21,8 @@ export default function WidgetRenderer({ toolData }: { toolData: ToolData & { ui
     }
 
     switch (spec.type) {
+        case "calc":
+            return <CalculatorView calculatorId={spec.calculator} initial={spec.inputs} compact />;
         case "calculator":
         case "workflow":
             // ToolCard already understands this shape (relation/solve_for/steps).
