@@ -358,8 +358,27 @@ Reply with ONE JSON object and nothing else:
     {"calculator": "<id from catalog>", "inputs": {"<param>": <value>}, "purpose": "<why, one line>"}
   ],
   "assumptions": ["<each engineering assumption you made, with the value>"],
-  "missing": ["<critical information the user did not give, if any>"]
+  "missing": ["<critical information the user did not give, if any>"],
+  "clarify": null
 }
+
+ASK FIRST when the user describes a task or names a part but leaves out a value that drives the \
+result and has no safe default: the loads (force, torque, power, pressure), the speed of a rotating \
+part, the span or length, the required life, or the size/space available when that sets the answer. \
+Then return "tools": [] and
+  "clarify": {"message": "<1-2 sentences: what you understood and what you will check>",
+              "questions": [{"id": "<short_key>", "label": "<what to enter>", "unit": "<unit or empty>",
+                             "options": ["<choice>", ...] or [], "placeholder": "<typical value>"}]}
+- 2-5 questions, most important first, ONE value per question (radial and axial load are two questions).
+- Use "options" for categorical answers (load type, bearing type, material, joint type) and leave \
+"unit" empty for those. Options are short plain-language labels an engineer reads at a glance \
+("Continuous 24 h", "Ball or roller, any"), never catalog codes like "8h_partial" or "dgbb".
+- Labels are plain words without symbols ("Radial load", not "Radial load (Fr)").
+- Never ask for what has a sound engineering default (friction, safety factor, reliability, lubrication, \
+standard material grade): assume it and list it in "assumptions" later.
+- Never ask again when the user already answered your questions, gave the values, or says to use \
+typical values / assume / go ahead: run the calculators with sensible defaults instead.
+- Explanation, comparison and lookup questions never need clarify.
 
 Rules:
 - Use only calculator ids and param names that appear in the catalog.
@@ -376,6 +395,8 @@ another unit write {"value": 12, "unit": "kN"} (pint unit strings: mm, m, N, kN,
 - A param marked "(only if X=Y)" is ignored unless X=Y. When the user gives a number that a preset \
 select would otherwise override (e.g. a required life vs an application class), set that select to \
 its custom option so the user's number is used.
+- Loads you do not set are zero once you set any load of a calculator (e.g. a beam with only "w1" \
+carries no point load), so set every load the user describes.
 - Fill everything the user gave, exactly as given. For anything missing choose a sensible \
 engineering default (load factor, friction, safety factor, reliability, lubrication) and list it in \
 "assumptions" with its value. Do NOT restate material or catalogue properties (strengths, masses, \
@@ -421,8 +442,8 @@ GROUNDING (most important)
 the user's message. Do not estimate, scale or extrapolate new numbers ("if friction drops to 0.10 \
 the preload becomes …" is forbidden). Describe sensitivity in words and name the input to change.
 - Use part designations and links exactly as the results give them. Cite only standards you are \
-sure of (e.g. ISO 273 clearance holes, ISO 898-1, EN 1993-1-8). Never invent brands, products, \
-prices or catalogue values.
+sure of (e.g. ISO 273 clearance holes, ISO 898-1, EN 1993-1-8). Never invent brands, products \
+or catalogue values. Never state a price or price range, not even "typically": say where to get a quote.
 - If no calculator ran, answer qualitatively from engineering knowledge and name the calculator \
 that would quantify it. Quote a number only if it is a standard value you are certain of.
 - Getting the direction of an effect wrong is worse than saying nothing: e.g. interference-fit \
@@ -493,7 +514,11 @@ def _history_text(history: List[Dict[str, Any]], limit: int = 12) -> str:
     for m in history[-limit:]:
         role = "User" if m["role"] == "user" else "MechCopilot"
         content = (m.get("content") or "").strip()
-        tools = (m.get("tool_data") or {}).get("tools") if isinstance(m.get("tool_data"), dict) else None
+        td = m.get("tool_data") if isinstance(m.get("tool_data"), dict) else {}
+        tools = td.get("tools")
+        asked = (td.get("clarify") or {}).get("questions") or []
+        if asked:
+            content += "\n[asked the user: " + "; ".join(q["label"] for q in asked) + "]"
         if tools:
             used = "; ".join(f"{t.get('calculator')}({json.dumps(t.get('inputs', {}))[:300]})"
                              for t in tools if t.get("type") == "calc")
@@ -561,6 +586,30 @@ def _clean_inputs(calc_id: str, raw: Dict[str, Any]) -> Tuple[Dict[str, Any], Li
     return cleaned, dropped
 
 
+def clean_clarify(plan: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The plan's questions for the user, validated; None when it did not ask."""
+    raw = plan.get("clarify")
+    if not isinstance(raw, dict):
+        return None
+    questions = []
+    for i, q in enumerate(raw.get("questions") or []):
+        if not isinstance(q, dict) or not str(q.get("label") or "").strip():
+            continue
+        options = [str(o)[:60] for o in (q.get("options") or []) if str(o).strip()][:8]
+        questions.append({
+            "id": re.sub(r"\W+", "_", str(q.get("id") or f"q{i}"))[:32],
+            "label": str(q["label"]).strip()[:80],
+            "unit": "" if options else str(q.get("unit") or "").strip()[:16],
+            "options": options,
+            "placeholder": re.sub(r"^(e\.g\.|eg|for example)[,:]?\s*", "",
+                                  str(q.get("placeholder") or "").strip(), flags=re.I)[:40],
+        })
+    if not questions:
+        return None
+    message = str(raw.get("message") or "").strip() or "A few details first, so the numbers fit your case:"
+    return {"message": message[:600], "questions": questions[:5]}
+
+
 def parse_plan(text: str) -> Optional[Dict[str, Any]]:
     start = text.find("{")
     while start != -1:
@@ -573,6 +622,34 @@ def parse_plan(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+# Loads that act together. Their defaults are demo values (a 10 kN point load AND 5 kN/m on
+# a beam); once the plan sets any of them, the ones it left out must be zero, not the demo.
+LOAD_SETS: Dict[str, Tuple[str, ...]] = {
+    "beam_analysis": ("P1", "P2", "P3", "w1", "w1_end", "w2", "M1"),
+    "beam_profile_selector": ("w", "P"),
+    "shaft_fatigue": ("Ma", "Mm", "Ta", "Tm"),
+    "round_bar_combined": ("F", "M", "T"),
+    "bearing_selector": ("Fr", "Fa"),
+    "bearing_life": ("Fr", "Fa"),
+    "fastener_selector": ("FA", "FQ"),
+    "bolted_joint": ("FA_max", "FA_min"),
+    "bolt_group_eccentric": ("F", "Fx"),
+    "fillet_weld": ("V", "N"),
+    "pressure_vessel": ("p_i", "p_o"),
+    "fatigue_life": ("sa", "sm"),
+}
+
+
+def _zero_unset_loads(calc_id: str, inputs: Dict[str, Any]) -> None:
+    names = LOAD_SETS.get(calc_id, ())
+    if not any(n in inputs for n in names):
+        return                                  # nothing set: keep the demo case intact
+    params = {p.name: p for p in CATALOG[calc_id].params}
+    for n in names:
+        if n not in inputs:
+            inputs[n] = {"value": 0.0, "unit": params[n].to_dict()["unit"]}
+
+
 def normalise_tools(plan: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Validate the model's tool list against the catalog."""
     tools, notes = [], []
@@ -583,6 +660,7 @@ def normalise_tools(plan: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[st
             notes.append(f"Skipped unknown calculator '{cid}'.")
             continue
         inputs, dropped = _clean_inputs(cid, t.get("inputs") or {})
+        _zero_unset_loads(cid, inputs)
         key = (cid, json.dumps(inputs, sort_keys=True))
         if key in seen:
             continue
@@ -724,7 +802,7 @@ def offline_answer(summary: List[Dict[str, Any]], configured: bool) -> str:
                 continue
             verdict = {"ok": "passes all checks", "warn": "passes with warnings",
                        "fail": "fails at least one check", "none": "computed"}[s["verdict"]]
-            lines = [f"**{s['title']}** — {verdict} with the default inputs below."]
+            lines = [f"**{s['title']}** — {verdict} with the inputs below."]
             for label, val in list(s["outputs"].items())[:4]:
                 lines.append(f"- {label}: **{val}**")
             for c in s["checks"][:3]:
@@ -769,9 +847,19 @@ def respond(message: str, history: List[Dict[str, Any]], tier: str = "efficient"
     for n in notices:
         yield {"type": "notice", "level": "warn", "content": n}
 
+    # Key inputs missing: ask before computing anything (the UI shows the questions as a form).
+    clarify = clean_clarify(plan) if configured and not tools else None
+    if clarify:
+        yield {"type": "plan", "assumptions": [], "missing": [], "title": plan.get("title")}
+        yield {"type": "clarify", **clarify}
+        yield {"type": "token", "content": clarify["message"]}
+        yield {"type": "final", "content": clarify["message"], "title": plan.get("title"),
+               "tool_data": {"tools": [], "results": [], "assumptions": [], "missing": [],
+                             "notices": notices, "clarify": clarify}}
+        return
+
     yield {"type": "plan", "assumptions": plan.get("assumptions") or [],
            "missing": plan.get("missing") or [], "title": plan.get("title")}
-
     if tools:
         yield {"type": "status", "content": "Running calculations…"}
     results = run_tools(tools)

@@ -149,6 +149,15 @@ cd frontend && npx tsc --noEmit                 # frontend types
 
 The tests need no API key: the copilot tests use a fake model.
 
+To measure answer quality against the live model, run the eval suite (needs a Replicate token;
+about 4 US cents per question). It asks reference questions with hand-checked answers, checks that
+every number in each answer traces back to a calculator result, and writes a report to
+`backend/evals/reports/`:
+
+```bash
+cd backend && ../.venv/bin/python -m evals.run --judge
+```
+
 Adding a calculator: create a `Calculator` in the relevant `backend/engineering/<domain>/` module,
 add its diagram to `frontend/components/diagrams/<domain>.tsx`, and add known-value tests. The
 registry tests automatically check that every calculator runs on its defaults and presets.

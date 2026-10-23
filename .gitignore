@@ -35,3 +35,6 @@ Thumbs.db
 backend/data/user/
 frontend/.impeccable/
 *.log
+
+# --- Eval reports (contain live model output) ---
+backend/evals/reports/

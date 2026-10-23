@@ -237,3 +237,49 @@ def test_catalog_prompt_lists_every_calculator():
     text = copilot.catalog_prompt()
     for cid in CATALOG:
         assert f"- {cid}:" in text
+
+
+# --- load defaults and clarifying questions -----------------------------------
+
+def _output(result, label_start):
+    return next(o for o in result["outputs"] if o["label"].startswith(label_start))
+
+
+def test_unset_loads_are_zero_once_the_plan_sets_one():
+    """A beam planned with only a UDL must not keep the calculator's demo point load.
+    IPE 200 (22.4 kg/m), 4 m, 12 kN/m: M = (12 + 0.22) * 4^2 / 8 = 24.4 kN·m, δ ≈ 10 mm."""
+    tools, _ = normalise_tools({"tools": [{"calculator": "beam_analysis", "inputs": {
+        "L": 4, "support": "simply_supported", "w1": 12, "profile": "IPE 200"}}]})
+    assert tools[0]["inputs"]["P1"]["value"] == 0
+    r = copilot.run_tools(tools)[0]["result"]
+    assert float(_output(r, "Max bending moment")["display"]) == pytest.approx(24.4, rel=0.01)
+    assert float(_output(r, "Max deflection")["display"]) == pytest.approx(10.0, rel=0.03)
+
+
+def test_demo_loads_kept_when_plan_sets_no_load():
+    tools, _ = normalise_tools({"tools": [{"calculator": "beam_analysis", "inputs": {"L": 4}}]})
+    assert "P1" not in tools[0]["inputs"]
+
+
+def test_missing_key_inputs_ask_instead_of_computing(monkeypatch):
+    monkeypatch.delenv("MECH_DEMO_MODE", raising=False)
+    monkeypatch.setattr(copilot, "provider", lambda: "replicate")
+    plan = {"title": "Bearing selection", "tools": [], "clarify": {
+        "message": "I'll size a bearing for your shaft.",
+        "questions": [{"id": "Fr", "label": "Radial load", "unit": "kN", "placeholder": "3.5"},
+                      {"id": "type", "label": "Bearing type", "unit": "x", "options": ["Ball", "Roller"]},
+                      {"label": ""}]}}
+    monkeypatch.setattr(copilot, "llm_complete", lambda *a, **k: json.dumps(plan))
+
+    def no_review(*a, **k):
+        raise AssertionError("must not write an answer before the user replies")
+
+    monkeypatch.setattr(copilot, "llm_stream", no_review)
+    events = _events(respond("I need a bearing for my shaft", [], "efficient"))
+    asked = next(e for e in events if e["type"] == "clarify")
+    assert [q["label"] for q in asked["questions"]] == ["Radial load", "Bearing type"]
+    assert asked["questions"][1]["unit"] == ""          # choices carry no unit
+    final = events[-1]
+    assert final["tool_data"]["clarify"]["questions"] and final["tool_data"]["tools"] == []
+    assert "[asked the user: Radial load; Bearing type]" in copilot._history_text(
+        [{"role": "assistant", "content": final["content"], "tool_data": final["tool_data"]}])

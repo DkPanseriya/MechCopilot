@@ -11,6 +11,7 @@ import {
 import { API_BASE } from "@/lib/api";
 import CalculatorView from "@/components/calc/CalculatorView";
 import OnboardingModal, { type Profile } from "@/components/OnboardingModal";
+import ClarifyForm, { type Clarify } from "@/components/chat/ClarifyForm";
 
 type Tool = { type: string; calculator?: string; title?: string; inputs?: Record<string, any>; purpose?: string };
 
@@ -21,17 +22,23 @@ interface ChatMessage {
     notices: string[];
     assumptions: string[];
     missing: string[];
+    clarify?: Clarify;
     status?: string;
     pending?: boolean;
 }
 
-const EXAMPLES = [
-    { title: "Pick a bolt", prompt: "Which bolt should I use to clamp two 10 mm steel plates with a 9 kN separating load? Give me the tightening torque." },
-    { title: "Select a bearing", prompt: "Select a deep groove ball bearing for a 30 mm shaft: 3.5 kN radial, 0.8 kN axial, 1450 rpm, 25,000 h life." },
-    { title: "Check a beam", prompt: "Check an IPE 200 in S355, 4 m simply supported, carrying 12 kN/m. Is deflection OK for L/250?" },
-    { title: "Size a shaft", prompt: "Size a C45 shaft for 350 N·m torque and 180 N·m bending with a shoulder fillet, fatigue safety factor 2." },
-    { title: "Choose a fit", prompt: "What fit should I use to press a steel gear onto a 40 mm shaft so it transmits 200 N·m without a key?" },
-    { title: "Revisit a concept", prompt: "Remind me how bending and torsion combine on a shaft, with a diagram." },
+// Starting points: picking one tells the copilot what you're working on; it then asks for
+// the loads, sizes and constraints it needs instead of assuming them.
+const TOPICS = [
+    { title: "Bolted joint", hint: "Size, class, preload, torque", says: "a bolted joint" },
+    { title: "Bearings", hint: "Selection, life, part numbers", says: "a bearing arrangement" },
+    { title: "Shaft", hint: "Fatigue, critical speed, keys", says: "a shaft" },
+    { title: "Beam or frame", hint: "Stress, deflection, profiles", says: "a beam or frame member" },
+    { title: "Fit or press fit", hint: "ISO fits, torque capacity", says: "a fit or press fit between a shaft and hub" },
+    { title: "Gear pair", hint: "Bending and contact strength", says: "a spur gear pair" },
+    { title: "Spring", hint: "Compression or torsion", says: "a spring" },
+    { title: "Welded joint", hint: "Fillet weld groups", says: "a welded joint" },
+    { title: "Pressure vessel or pipe", hint: "Wall stress, thickness", says: "a pressure vessel or pipe" },
 ];
 
 function fromStored(m: any): ChatMessage {
@@ -45,6 +52,7 @@ function fromStored(m: any): ChatMessage {
         notices: td?.notices || [],
         assumptions: td?.assumptions || [],
         missing: td?.missing || [],
+        clarify: td?.clarify || undefined,
     };
 }
 
@@ -164,6 +172,7 @@ export default function ChatThread({ sessionId: initialId }: { sessionId: number
                         case "notice": patchLast((m) => ({ ...m, notices: [...m.notices, ev.content] })); break;
                         case "plan": patchLast((m) => ({ ...m, assumptions: ev.assumptions || [], missing: ev.missing || [] })); break;
                         case "tool": patchLast((m) => ({ ...m, tools: [...m.tools, ev.data] })); break;
+                        case "clarify": patchLast((m) => ({ ...m, clarify: { message: ev.message, questions: ev.questions } })); break;
                         case "token": patchLast((m) => ({ ...m, content: m.content + ev.content, status: undefined })); break;
                         case "replace_content": patchLast((m) => ({ ...m, content: ev.content })); break;
                         case "error": patchLast((m) => ({ ...m, notices: [...m.notices, ev.content] })); break;
@@ -218,17 +227,17 @@ export default function ChatThread({ sessionId: initialId }: { sessionId: number
 
                     {empty && (
                         <div className="pt-10 md:pt-16">
-                            <h1 className="text-3xl font-semibold text-foreground">What are you designing?</h1>
+                            <h1 className="text-3xl font-semibold text-foreground">What are you working on?</h1>
                             <p className="text-muted-foreground mt-2 max-w-2xl">
-                                Describe the part, the loads and what you need to decide. I’ll pick the right calculations,
-                                run them against the standards, and give you a recommendation with parts you can buy.
+                                Describe the problem in your own words below: the part, the loads, the space you have and
+                                what you need to decide. Or pick a starting point, and I’ll ask for what the calculation needs.
                             </p>
-                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 mt-8">
-                                {EXAMPLES.map((ex) => (
-                                    <button key={ex.title} onClick={() => send(ex.prompt)}
-                                        className="text-left rounded-xl border border-border bg-card p-4 hover:border-blue-500/50 transition-colors">
-                                        <div className="text-sm font-medium text-foreground">{ex.title}</div>
-                                        <div className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{ex.prompt}</div>
+                            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 mt-8">
+                                {TOPICS.map((t) => (
+                                    <button key={t.title} onClick={() => send(`I'm working on ${t.says}.`)} disabled={loading}
+                                        className="text-left rounded-xl border border-border bg-card px-4 py-3 hover:border-blue-500/50 transition-colors disabled:opacity-50">
+                                        <div className="text-sm font-medium text-foreground">{t.title}</div>
+                                        <div className="text-xs text-muted-foreground mt-0.5">{t.hint}</div>
                                     </button>
                                 ))}
                             </div>
@@ -263,6 +272,9 @@ export default function ChatThread({ sessionId: initialId }: { sessionId: number
                                         ) : null}
                                         {m.pending && m.content && m.status && (
                                             <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" />{m.status}</div>
+                                        )}
+                                        {m.clarify && i === messages.length - 1 && !m.pending && (
+                                            <ClarifyForm clarify={m.clarify} onSubmit={send} disabled={loading} />
                                         )}
                                         <AssistantMeta m={m} />
                                     </div>
