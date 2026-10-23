@@ -40,8 +40,8 @@ calculator also opens directly from the **Calculator Library**, no chat needed.
 You need **Python 3.10+** and **Node.js 20+**.
 
 ```bash
-git clone https://github.com/DkPanseriya/mechcopilot.git
-cd mechcopilot
+git clone https://github.com/DkPanseriya/MechCopilot.git
+cd MechCopilot
 ```
 
 Then run the launcher — it sets everything up on first run and opens the app:
