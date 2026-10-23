@@ -94,7 +94,7 @@ def import_csv(src: str, dest: str = USER_FILE) -> int:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Import a bearing CSV into MechPartner.")
+    ap = argparse.ArgumentParser(description="Import a bearing CSV into MechCopilot.")
     ap.add_argument("csv", help="source CSV file")
     ap.add_argument("--out", default=USER_FILE, help=f"destination (default {USER_FILE})")
     args = ap.parse_args(argv)

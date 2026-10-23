@@ -1,5 +1,5 @@
 """
-MechPartner copilot: plan -> compute -> review.
+MechCopilot copilot: plan -> compute -> review.
 
   1. PLAN    The model reads the calculator catalog and the conversation and
              returns JSON: which calculators to run, with which inputs, and the
@@ -340,7 +340,7 @@ def catalog_prompt() -> str:
 # Prompts
 # --------------------------------------------------------------------------
 
-PERSONA = """You are MechPartner, a senior mechanical design engineer (20+ years: machine design, \
+PERSONA = """You are MechCopilot, a senior mechanical design engineer (20+ years: machine design, \
 drivetrains, structures, fasteners, bearings). You are rigorous, practical and concise. You think \
 in load paths, failure modes and safety factors, you know the standards (ISO, DIN/EN, VDI 2230, \
 ISO 281, Shigley, Roark) and you always recommend concrete, standard, buyable parts."""
@@ -491,7 +491,7 @@ def _profile_line(profile: Optional[Dict[str, Any]]) -> str:
 def _history_text(history: List[Dict[str, Any]], limit: int = 12) -> str:
     out = []
     for m in history[-limit:]:
-        role = "User" if m["role"] == "user" else "MechPartner"
+        role = "User" if m["role"] == "user" else "MechCopilot"
         content = (m.get("content") or "").strip()
         tools = (m.get("tool_data") or {}).get("tools") if isinstance(m.get("tool_data"), dict) else None
         if tools:

@@ -15,7 +15,7 @@ from routers.materials import router as materials_router  # noqa: E402
 from routers.reporting import router as reporting_router  # noqa: E402
 from routers.sessions import router as sessions_router  # noqa: E402
 
-app = FastAPI(title="MechPartner API", version="1.0.0")
+app = FastAPI(title="MechCopilot API", version="1.0.0")
 
 _origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 app.add_middleware(
@@ -39,7 +39,7 @@ def on_startup():
 
 @app.get("/")
 async def root():
-    return {"message": "MechPartner API is online", "docs": "/docs"}
+    return {"message": "MechCopilot API is online", "docs": "/docs"}
 
 
 @app.get("/health")

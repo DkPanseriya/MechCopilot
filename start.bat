@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 echo.
-echo   MechPartner - mechanical design copilot
+echo   MechCopilot - AI design copilot for mechanical engineers
 echo   ---------------------------------------
 
 where python >nul 2>nul || (echo Python 3.10+ is required: https://www.python.org/downloads/ & pause & exit /b 1)
@@ -51,14 +51,14 @@ if "%MODE%"=="prod" (
 )
 
 echo Starting backend on http://127.0.0.1:8001 and frontend on http://localhost:3000 ...
-start "MechPartner backend" cmd /k "cd /d "%~dp0backend" && ..\.venv\Scripts\python -m uvicorn main:app --host 127.0.0.1 --port 8001"
+start "MechCopilot backend" cmd /k "cd /d "%~dp0backend" && ..\.venv\Scripts\python -m uvicorn main:app --host 127.0.0.1 --port 8001"
 if "%MODE%"=="prod" (
-    start "MechPartner frontend" cmd /k "cd /d "%~dp0frontend" && npm start"
+    start "MechCopilot frontend" cmd /k "cd /d "%~dp0frontend" && npm start"
 ) else (
-    start "MechPartner frontend" cmd /k "cd /d "%~dp0frontend" && npm run dev"
+    start "MechCopilot frontend" cmd /k "cd /d "%~dp0frontend" && npm run dev"
 )
 timeout /t 8 /nobreak >nul
 start "" http://localhost:3000
 echo.
-echo   Running. Close the two server windows to stop MechPartner.
+echo   Running. Close the two server windows to stop MechCopilot.
 endlocal

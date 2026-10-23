@@ -1,6 +1,6 @@
-# MechPartner — an AI design partner for mechanical engineers
+# MechCopilot — an AI design copilot for mechanical engineers
 
-Describe a part, its loads and what you need to decide. MechPartner picks the right calculations,
+Describe a part, its loads and what you need to decide. MechCopilot picks the right calculations,
 runs them on validated engineering formulas, and answers like a senior design engineer: a
 recommendation with the governing numbers, the assumptions behind it, pass/fail checks, and
 **standard parts you can actually buy** — bolt size and class with tightening torque, bearing
@@ -40,8 +40,8 @@ calculator also opens directly from the **Calculator Library**, no chat needed.
 You need **Python 3.10+** and **Node.js 20+**.
 
 ```bash
-git clone https://github.com/DkPanseriya/mechpartner.git
-cd mechpartner
+git clone https://github.com/DkPanseriya/mechcopilot.git
+cd mechcopilot
 ```
 
 Then run the launcher — it sets everything up on first run and opens the app:
@@ -126,7 +126,7 @@ that every calculator runs cleanly on its defaults and presets.
 The bearing database uses **ISO-standard designations and boundary dimensions** (identical across
 manufacturers) with **typical** load ratings. For every result you get the exact SKF designation
 (e.g. `6206-2RSH`) and a direct link to SKF's product page to confirm the certified ratings before
-ordering. MechPartner does not copy or redistribute manufacturer catalogues.
+ordering. MechCopilot does not copy or redistribute manufacturer catalogues.
 
 To use your own catalogue data (e.g. an export from your supplier), import a CSV with the columns
 `designation,type,d,D,B,C,C0,Pu,n_ref,n_lim` (mm, N and rpm; `type` is one of `dgbb`, `acbb`,
@@ -155,7 +155,7 @@ registry tests automatically check that every calculator runs on its defaults an
 
 ## Disclaimer
 
-MechPartner is a design aid. Results depend on the inputs and on simplified standard methods, and
+MechCopilot is a design aid. Results depend on the inputs and on simplified standard methods, and
 the language model can misread a question. Always review the assumptions and the worked solution,
 and have safety-critical designs verified by a qualified engineer before manufacture.
 

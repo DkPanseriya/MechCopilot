@@ -28,7 +28,7 @@ export default function OnboardingModal({ onComplete }: { onComplete: (profile: 
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
             <div className="bg-card border border-border rounded-2xl p-7 max-w-lg w-full shadow-2xl">
-                <h2 className="text-xl font-semibold text-foreground">Welcome to MechPartner</h2>
+                <h2 className="text-xl font-semibold text-foreground">Welcome to MechCopilot</h2>
                 <p className="text-sm text-muted-foreground mt-1.5 mb-6">
                     Tell me your experience level so I can pitch explanations right. You can change this anytime.
                 </p>

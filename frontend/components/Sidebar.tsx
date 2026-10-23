@@ -104,7 +104,7 @@ export default function Sidebar() {
         <div suppressHydrationWarning className="w-64 border-r border-border p-4 flex flex-col bg-muted/40 h-screen fixed left-0 top-0 overflow-y-auto z-50 transition-colors duration-300">
             <div className="mb-8" suppressHydrationWarning>
                 <a href="/" className="flex items-center gap-2">
-                    <h1 className="text-xl font-bold tracking-tight text-foreground">Mech<span className="text-blue-500">Partner</span> <span className="text-xs text-muted-foreground font-normal">v1.0</span></h1>
+                    <h1 className="text-xl font-bold tracking-tight text-foreground">Mech<span className="text-blue-500">Copilot</span> <span className="text-xs text-muted-foreground font-normal">v1.0</span></h1>
                 </a>
             </div>
 

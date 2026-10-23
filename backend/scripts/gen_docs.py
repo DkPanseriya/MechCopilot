@@ -16,7 +16,7 @@ def main() -> None:
     lines = [
         "# Calculator reference",
         "",
-        f"MechPartner ships {len(calcs)} calculators. Each one shows an annotated diagram, live inputs "
+        f"MechCopilot ships {len(calcs)} calculators. Each one shows an annotated diagram, live inputs "
         "with unit switching, pass/warn/fail checks, plots and the full worked solution. Open them from "
         "the **Calculator Library** or let the copilot choose them for you.",
         "",

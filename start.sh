@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# MechPartner launcher for macOS / Linux.
+# MechCopilot launcher for macOS / Linux.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 echo
-echo "  MechPartner - mechanical design copilot"
+echo "  MechCopilot - AI design copilot for mechanical engineers"
 echo "  ---------------------------------------"
 
 PY=python3
