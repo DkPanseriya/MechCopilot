@@ -24,10 +24,45 @@ import pint
 
 from engineering.core import CalcError, UNIT_CHOICES, run_calculator, to_canonical, ureg
 from engineering.registry import CATALOG, ordered
-from llm_utils import extract_balanced_json, try_parse_json
 
-DEFAULT_MODEL = "anthropic/claude-4.5-haiku"
-DEFAULT_DEEP_MODEL = "anthropic/claude-sonnet-4.6"
+
+def extract_balanced_json(text: str, start: int) -> Optional[str]:
+    """The JSON object starting at text[start] == '{', matched by brace depth (string-aware)."""
+    if start >= len(text) or text[start] != "{":
+        return None
+    depth, in_str, i = 0, False, start
+    while i < len(text):
+        ch = text[i]
+        if in_str and ch == "\\":
+            i += 2
+            continue
+        if ch == '"':
+            in_str = not in_str
+        elif not in_str:
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start:i + 1]
+        i += 1
+    return None
+
+
+def try_parse_json(text: str) -> Optional[Any]:
+    """Parse model JSON, tolerating stray backslashes (LaTeX) and control characters."""
+    for candidate in (text, re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)):
+        try:
+            return json.loads(candidate, strict=False)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+# Planning is structured selection: a small fast model does it well. Reviewing results is
+# engineering judgement: a stronger model writes the answer and runs the follow-up round.
+DEFAULT_MODEL = "anthropic/claude-4.5-haiku"          # plan (Fast)
+DEFAULT_REVIEW_MODEL = "anthropic/claude-sonnet-4.6"  # follow-up + answer (Fast)
+DEFAULT_DEEP_MODEL = "anthropic/claude-sonnet-5"      # every step in Deep review
 OPENAI_MODEL = "gpt-4o-mini"
 OPENAI_DEEP_MODEL = "gpt-4o"
 
@@ -55,12 +90,16 @@ def provider() -> str:
     return "offline"
 
 
-def model_for(tier: str) -> str:
+def model_for(tier: str, role: str = "plan") -> str:
+    """Model for a tier ("efficient" | "deep") and role ("plan" | "review")."""
     deep = tier == "deep"
     p = provider()
     if p == "replicate":
-        return _env("REPLICATE_MODEL_DEEP" if deep else "REPLICATE_MODEL") or (
-            DEFAULT_DEEP_MODEL if deep else DEFAULT_MODEL)
+        if deep:
+            return _env("REPLICATE_MODEL_DEEP") or DEFAULT_DEEP_MODEL
+        if role == "review":
+            return _env("REPLICATE_MODEL_REVIEW") or DEFAULT_REVIEW_MODEL
+        return _env("REPLICATE_MODEL") or DEFAULT_MODEL
     if p == "openai":
         return _env("OPENAI_MODEL_DEEP" if deep else "OPENAI_MODEL") or (
             OPENAI_DEEP_MODEL if deep else OPENAI_MODEL)
@@ -94,7 +133,8 @@ def status() -> Dict[str, Any]:
     p = provider()
     return {
         "provider": p,
-        "model": model_for("efficient"),
+        "model": model_for("efficient", "review"),
+        "plan_model": model_for("efficient", "plan"),
         "deep_model": model_for("deep"),
         "calculators": len(CATALOG),
         "configured": p != "offline",
@@ -111,25 +151,116 @@ def _replicate_error(e: Exception) -> LLMError:
         return LLMError("Replicate refused the request for billing reasons — add credit or a payment "
                         "method on replicate.com.")
     if "404" in msg:
-        return LLMError(f"Replicate model not found. Check REPLICATE_MODEL ({model_for('efficient')}).")
+        return LLMError("Replicate model not found. Check REPLICATE_MODEL / REPLICATE_MODEL_REVIEW in backend/.env.")
     return LLMError(f"Replicate request failed: {msg[:240]}")
 
 
-def _replicate_stream(system: str, prompt: str, tier: str, max_tokens: int) -> Iterator[str]:
+def _transient(e: Exception) -> bool:
+    msg = f"{type(e).__name__} {e}".lower()
+    return any(k in msg for k in ("timed out", "timeout", "connection", "502", "503", "504", "temporarily"))
+
+
+def _replicate_client():
+    import httpx
     import replicate
-    client = replicate.Client(api_token=_env("REPLICATE_API_TOKEN"))
-    model = model_for(tier)
-    try:
-        for event in client.stream(model, input={
-            "prompt": prompt,
-            "system_prompt": system,
-            "max_tokens": max(int(max_tokens), 1024),
-        }):
-            text = str(event)
-            if text:
-                yield text
-    except Exception as e:  # replicate raises several exception types
-        raise _replicate_error(e) from e
+    # Generous read timeout: a cold model can sit in the queue before the first token.
+    return replicate.Client(api_token=_env("REPLICATE_API_TOKEN"),
+                            timeout=httpx.Timeout(180.0, connect=20.0))
+
+
+def _payload(system: str, prompt: str, max_tokens: int) -> Dict[str, Any]:
+    return {"prompt": prompt, "system_prompt": system, "max_tokens": max(int(max_tokens), 1024)}
+
+
+def _joined(output: Any) -> str:
+    if isinstance(output, list):
+        return "".join(str(o) for o in output)
+    return "" if output is None else str(output)
+
+
+class TextStream:
+    """Iterable of text chunks; `final` holds the provider's authoritative full text
+    once iteration ends (None if the provider has no separate final output)."""
+
+    def __init__(self) -> None:
+        self.final: Optional[str] = None
+        self._gen: Iterator[str] = iter(())
+
+    def __iter__(self) -> Iterator[str]:
+        return self._gen
+
+
+def dedupe_chunk(state: Dict[str, str], chunk: str) -> str:
+    """Return only the genuinely new text in `chunk`.
+
+    Replicate's streams for some models are not purely incremental: they periodically
+    re-send the answer from the beginning (in pieces), mixed with normal deltas. Joined
+    naively the user sees sentences repeated several times. `state` keeps what has been
+    shown ("out") and the text of the current (possibly replayed) segment ("seg")."""
+    out, seg = state["out"], state["seg"]
+    continuing_replay = len(seg) < len(out) and out.startswith(seg + chunk)
+    if not continuing_replay and len(chunk) >= 3 and out.startswith(chunk):
+        state["seg"] = chunk                      # a replay from the start begins
+        return ""
+    new_seg = seg + chunk
+    if out.startswith(new_seg):                   # still replaying text already shown
+        state["seg"] = new_seg
+        return ""
+    if new_seg.startswith(out):                   # extends past what was shown
+        state["out"] = state["seg"] = new_seg
+        return new_seg[len(out):]
+    state["out"] = out + chunk                    # unexpected: treat as a plain delta
+    state["seg"] = state["out"]
+    return chunk
+
+
+def _replicate_stream(system: str, prompt: str, tier: str, max_tokens: int, role: str,
+                      holder: TextStream) -> Iterator[str]:
+    client = _replicate_client()
+    model = model_for(tier, role)
+    for attempt in range(2):
+        produced = False
+        try:
+            pred = client.predictions.create(model=model, input=_payload(system, prompt, max_tokens),
+                                             stream=True)
+            state = {"out": "", "seg": ""}
+            for event in pred.stream():
+                text = dedupe_chunk(state, str(event)) if str(event) else ""
+                if text:
+                    produced = True
+                    yield text
+            pred.reload()
+            if pred.status == "failed":
+                raise LLMError(f"The model failed: {str(pred.error)[:200]}")
+            holder.final = _joined(pred.output) or state["out"]
+            return
+        except LLMError:
+            raise
+        except Exception as e:  # replicate raises several exception types
+            # Retry once on a transient failure, but never after streaming has started.
+            if attempt == 0 and not produced and _transient(e):
+                continue
+            raise _replicate_error(e) from e
+
+
+def _replicate_complete(system: str, prompt: str, tier: str, max_tokens: int, role: str) -> str:
+    """Non-streaming call: the prediction's final output is always clean."""
+    client = _replicate_client()
+    for attempt in range(2):
+        try:
+            pred = client.predictions.create(model=model_for(tier, role),
+                                             input=_payload(system, prompt, max_tokens))
+            pred.wait()
+            if pred.status != "succeeded":
+                raise LLMError(f"The model {pred.status}: {str(pred.error)[:200]}")
+            return _joined(pred.output)
+        except LLMError:
+            raise
+        except Exception as e:
+            if attempt == 0 and _transient(e):
+                continue
+            raise _replicate_error(e) from e
+    raise LLMError("Replicate request failed after a retry.")
 
 
 def _openai_stream(system: str, prompt: str, tier: str, max_tokens: int) -> Iterator[str]:
@@ -148,18 +279,27 @@ def _openai_stream(system: str, prompt: str, tier: str, max_tokens: int) -> Iter
         raise LLMError(f"OpenAI request failed: {str(e)[:240]}") from e
 
 
-def llm_stream(system: str, prompt: str, tier: str = "efficient", max_tokens: int = 2048) -> Iterator[str]:
+def llm_stream(system: str, prompt: str, tier: str = "efficient", max_tokens: int = 2048,
+               role: str = "review") -> TextStream:
     p = provider()
+    stream = TextStream()
     if p == "replicate":
-        yield from _replicate_stream(system, prompt, tier, max_tokens)
+        stream._gen = _replicate_stream(system, prompt, tier, max_tokens, role, stream)
     elif p == "openai":
-        yield from _openai_stream(system, prompt, tier, max_tokens)
+        stream._gen = _openai_stream(system, prompt, tier, max_tokens)
     else:
         raise LLMError("No language model configured.")
+    return stream
 
 
-def llm_complete(system: str, prompt: str, tier: str = "efficient", max_tokens: int = 1536) -> str:
-    return "".join(llm_stream(system, prompt, tier, max_tokens))
+def llm_complete(system: str, prompt: str, tier: str = "efficient", max_tokens: int = 1536,
+                 role: str = "plan") -> str:
+    p = provider()
+    if p == "replicate":
+        return _replicate_complete(system, prompt, tier, max_tokens, role)
+    if p == "openai":
+        return "".join(_openai_stream(system, prompt, tier, max_tokens))
+    raise LLMError("No language model configured.")
 
 
 # --------------------------------------------------------------------------
@@ -167,7 +307,9 @@ def llm_complete(system: str, prompt: str, tier: str = "efficient", max_tokens: 
 # --------------------------------------------------------------------------
 
 def catalog_prompt() -> str:
-    """Compact catalog: one block per calculator with param names, units and defaults."""
+    """Compact catalog: one block per calculator with param names, units, defaults and
+    the conditions under which a param is used (so a preset select does not silently
+    override a number the model also sets)."""
     lines: List[str] = []
     category = None
     for c in ordered():
@@ -175,16 +317,21 @@ def catalog_prompt() -> str:
             category = c.category
             lines.append(f"\n## {category}")
         s = c.llm_summary()
+        by_name = {p.name: p for p in c.params}
         params = []
         for p in s["params"]:
             if "unit" in p:
-                params.append(f"{p['name']}[{p['unit']}]={p['default']}")
+                txt = f"{p['name']}[{p['unit']}]={p['default']}"
             elif "options" in p:
                 opts = p["options"]
                 shown = "|".join(str(o) for o in opts[:12]) + ("|…" if len(opts) > 12 else "")
-                params.append(f"{p['name']}<{shown}>={p['default']}")
+                txt = f"{p['name']}<{shown}>={p['default']}"
             else:
-                params.append(f"{p['name']}({p.get('kind')})={p['default']}")
+                txt = f"{p['name']}({p.get('kind')})={p['default']}"
+            cond = by_name[p["name"]].show_if
+            if cond:
+                txt += " (only if " + " & ".join(f"{k}={'|'.join(map(str, v))}" for k, v in cond.items()) + ")"
+            params.append(txt)
         lines.append(f"- {c.id}: {c.title} — {c.summary}\n  params: {', '.join(params)}")
     return "\n".join(lines)
 
@@ -215,38 +362,116 @@ Reply with ONE JSON object and nothing else:
 }
 
 Rules:
-- Use only calculator ids and param names that appear in the catalog. Pick 1-3 calculators that \
-answer the question; use selector calculators for "which / choose / find" questions; for concept \
-explanations pick the calculator whose diagram and worked solution explain it.
+- Use only calculator ids and param names that appear in the catalog.
+- Use the FEWEST calculators that answer the question: usually 1, at most 3. Selector calculators \
+answer "which / choose / find" questions and already report torque, life, preload etc. — do not \
+add a second calculator that repeats them. Shaft fatigue already applies notch factors; do not add \
+a separate stress-concentration run unless the user asks about the notch itself.
+- Never guess a part size, designation or geometry for one calculator that depends on another \
+calculator's result in the same plan. A follow-up step can verify the chosen part afterwards.
+- Concept explanations: pick the one calculator whose diagram and worked solution show the concept.
 - Numbers are in the unit shown in brackets, e.g. "F": 12 means 12 in the listed unit. To use \
 another unit write {"value": 12, "unit": "kN"} (pint unit strings: mm, m, N, kN, MPa, GPa, N*m, rpm...).
 - Select params take one of the listed option values exactly.
-- Fill everything the user gave. For anything missing choose a sensible engineering default \
-(typical material, safety factor, friction, life class) and list it in "assumptions".
+- A param marked "(only if X=Y)" is ignored unless X=Y. When the user gives a number that a preset \
+select would otherwise override (e.g. a required life vs an application class), set that select to \
+its custom option so the user's number is used.
+- Fill everything the user gave, exactly as given. For anything missing choose a sensible \
+engineering default (load factor, friction, safety factor, reliability, lubrication) and list it in \
+"assumptions" with its value. Do NOT restate material or catalogue properties (strengths, masses, \
+ratings) in assumptions — the library supplies them; just name the material you picked.
 - Follow-ups ("make it 10.9", "what if the load doubles") re-run the earlier calculator with the change.
-- Pure conversation or advice with nothing to calculate: "tools": [].
+- General or comparison questions about standard parts and materials (e.g. "8.8 vs 10.9", "ball vs \
+roller bearing") still run a lookup or calculator for a representative case (e.g. fastener_lookup for \
+each class, bearing_life for each type) so the answer quotes library values, not memory.
+- Pure conversation with nothing to look up or calculate: "tools": [].
 
 CALCULATOR CATALOG
 """
 
+FOLLOWUP_INSTRUCTION = """
+
+STEP: FOLLOW-UP. The first calculations are done (results below). If a check failed, a selector \
+found nothing, or the chosen part should be verified in detail, you may run up to 2 MORE \
+calculators to reach a design that passes — e.g. another bearing type or a heavier series, a \
+smaller interference fit, the next standard shaft size, the selected bolt checked in the bolted-joint \
+calculator. Use the parts and numbers the results produced. Reply with ONE JSON object:
+{"tools": [ {"calculator": "<id>", "inputs": {...}, "purpose": "<why>"} ], "reason": "<one line>"}
+Reply {"tools": []} if more calculations would not change the recommendation."""
+
 ANSWER_SYSTEM = PERSONA + """
 
-STEP: REVIEW. The calculators you chose have been run by the engineering kernel. Write your reply \
-to the user based ONLY on those computed results.
+STEP: REVIEW. The calculators have been run by the engineering kernel. Write the reply to the user.
 
-How to write it:
-1. Lead with the direct answer or recommendation and the decisive numbers with units.
-2. Name concrete standard parts when relevant (e.g. "M10×35 ISO 4762 class 10.9, tighten to 51 N·m", \
-"SKF 6206-2RSH", "IPE 200, S355"). Prefer the designation and link the results provide.
-3. Verdict: say which checks pass, warn or fail and what governs the design.
-4. State the assumptions that matter and how sensitive the answer is to them.
-5. Finish with 1-3 specific next checks (fatigue, buckling, deflection, fits...).
+FORMAT (strict)
+- First line: the answer in **bold**, with the 1-3 decisive numbers. If a part or design failed a \
+check and a computed alternative passes, recommend the passing one. Never present a part whose \
+check failed as the recommendation without saying plainly that it fails.
+- Then 2-4 bullets: why — the governing checks with their numbers and pass/warn/fail.
+- Then a line "Assumptions to confirm:" with 1-3 bullets — only those that would change the answer.
+- Then a line "Next:" with 1-2 bullets — a specific check, or which input to adjust in the cards.
+- No headings, tables or horizontal rules: the calculator cards below the reply show every detail, \
+the diagram and the worked solution. Refer to them instead of repeating values.
+- At most {word_limit} words.
+- Explanation questions: 3-6 sentences of theory with the key formula(s) in LaTeX ($...$), then \
+point to the diagram and worked solution in the card. Theory needs no extra numbers.
 
-Style: an experienced engineer talking to a colleague. Short paragraphs and bullets, markdown, \
-no filler, no restating the question. Use LaTeX ($...$) only for a key formula. Never invent \
-numbers that are not in the results; if a calculator errored or information is missing, say \
-exactly what you need. The interactive calculators appear below your message — point to them \
-("adjust the clamp length in the bolted-joint card") rather than repeating every value."""
+GROUNDING (most important)
+- Every number with a unit that you write must appear in COMPUTED RESULTS, in the TOOL INPUTS or in \
+the user's message. Do not estimate, scale or extrapolate new numbers ("if friction drops to 0.10 \
+the preload becomes …" is forbidden). Describe sensitivity in words and name the input to change.
+- Use part designations and links exactly as the results give them. Cite only standards you are \
+sure of (e.g. ISO 273 clearance holes, ISO 898-1, EN 1993-1-8). Never invent brands, products, \
+prices or catalogue values.
+- If no calculator ran, answer qualitatively from engineering knowledge and name the calculator \
+that would quantify it. Quote a number only if it is a standard value you are certain of.
+- Getting the direction of an effect wrong is worse than saying nothing: e.g. interference-fit \
+stresses depend on the interference, not on press vs shrink assembly.
+- If a calculator errored or information is missing, say exactly what is needed.
+Voice: an experienced engineer talking to a colleague — direct, no filler, no restating the question."""
+
+WORD_LIMIT = {"efficient": 170, "deep": 320}
+
+# Which way to move when a check fails — given to the follow-up step for the calculators
+# that actually ran, so it changes the right input in the right direction.
+DESIGN_HINTS: Dict[str, str] = {
+    "interference_fit": "Hub/shaft stress fails while torque has margin → LOOSER fit (e.g. H7/r6, H7/p6) "
+                        "or larger hub OD; torque fails → tighter fit, longer hub or higher friction. "
+                        "Press vs shrink assembly does not change the stresses.",
+    "iso_fits": "Choose the fit class that gives the needed interference/clearance range.",
+    "bearing_selector": "Nothing found → FIRST re-run the selector at the same bore with btype 'any' "
+                        "(roller bearings carry far more radial load), so the answer can name a bearing "
+                        "that passes; then consider a larger bore. The modified life Lnm (basis Lnmh) can "
+                        "exceed the basic L10h.",
+    "bearing_life": "Life short → heavier series, roller bearing, cleaner lubrication (raises aISO) or larger bore.",
+    "bearing_required_c": "Use the required C to pick the smallest bearing per series that meets it.",
+    "shaft_fatigue": "Fatigue fails → next standard diameter up, larger fillet radius (lower Kf), better "
+                     "surface finish or stronger material; first-cycle yield fails → larger diameter.",
+    "round_bar_combined": "Fails → larger diameter or stronger material.",
+    "fastener_selector": "To verify the chosen bolt for cyclic load or soft plates, run bolted_joint with "
+                         "that exact size and class.",
+    "bolted_joint": "Separation or fatigue fails → larger size or higher class, more preload (better "
+                    "tightening method), longer clamp length; surface pressure fails → washer or flange head.",
+    "bolt_preload_torque": "Utilisation too high → lower utilisation or better friction control; preload "
+                           "too low → larger size or higher class.",
+    "thread_engagement": "Too short → deeper tapped hole, thread insert or lower bolt class.",
+    "bolt_shear_joint": "Slip or shear fails → more or larger bolts, higher class, more shear planes.",
+    "bolt_group_eccentric": "Critical bolt fails → larger pattern spacing, more bolts or larger size.",
+    "beam_analysis": "Stress or deflection fails → next standard profile up (beam_profile_selector gives "
+                     "the lightest that passes), stronger axis, shorter span or an extra support.",
+    "beam_profile_selector": "Use the lightest passing profile per family.",
+    "column_buckling": "Buckling fails → larger second moment of area, shorter effective length (better "
+                       "end fixity or bracing).",
+    "compression_spring": "Stress too high → thicker wire or stronger material; buckling → guide it or "
+                          "reduce free length / mean diameter ratio.",
+    "torsion_spring": "Stress too high → thicker wire or more coils.",
+    "fillet_weld": "Weld stress fails → larger leg size, longer weld or a pattern with larger section modulus.",
+    "spur_gear": "Bending fails → larger module or face width; contact fails → larger pinion, wider face "
+                 "or harder material.",
+    "parallel_key": "Crushing or shear fails → longer key, second key at 180° or an interference fit.",
+    "pressure_vessel": "Stress fails → thicker wall or stronger material.",
+    "fatigue_life": "Fatigue fails → lower alternating stress (larger section), lower Kf or better surface.",
+}
 
 
 def _profile_line(profile: Optional[Dict[str, Any]]) -> str:
@@ -388,16 +613,43 @@ def run_tools(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return results
 
 
-def summarise(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Compact, model-friendly digest of each run (also stored for reports)."""
+def _inputs_display(tool: Dict[str, Any]) -> Dict[str, str]:
+    """The inputs the planner set, keyed by human label ("Axial load": "9 kN")."""
+    calc = CATALOG[tool["calculator"]]
+    by_name = {p.name: p for p in calc.params}
+    out = {}
+    for name, val in tool.get("inputs", {}).items():
+        p = by_name.get(name)
+        if p is None:
+            continue
+        if isinstance(val, dict) and "value" in val:
+            unit = next((c["label"] for c in UNIT_CHOICES.get(p.dim, []) if c["value"] == val.get("unit")),
+                        val.get("unit") or "")
+            shown = f"{val['value']:g} {unit}".strip() if unit != "–" else f"{val['value']:g}"
+        elif p.kind == "select":
+            shown = next((str(o["label"]) for o in (p.options or []) if o["value"] == val), str(val))
+        else:
+            shown = str(val)
+        out[p.label] = shown
+    return out
+
+
+def summarise(results: List[Dict[str, Any]],
+              tools: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    """Compact, model-friendly digest of each run (also stored for reports).
+    Includes the inputs each run used, so the review never has to guess them."""
     out = []
-    for r in results:
+    for i, r in enumerate(results):
+        tool = tools[i] if tools and i < len(tools) else None
+        inputs = _inputs_display(tool) if tool else {}
         if not r["ok"]:
-            out.append({"calculator": r["calculator"], "title": r["title"], "error": r["error"]})
+            out.append({"calculator": r["calculator"], "title": r["title"], "inputs": inputs,
+                        "error": r["error"]})
             continue
         res = r["result"]
         s: Dict[str, Any] = {
             "calculator": r["calculator"], "title": r["title"], "verdict": res["verdict"],
+            "inputs": inputs, "other_inputs": "calculator defaults",
             "outputs": {o["label"]: f"{o['display']} {o['unit_label']}".strip() for o in res["outputs"]},
             "checks": [f"[{c['status']}] {c['label']}: {c['message']}" for c in res["checks"]],
         }
@@ -502,7 +754,7 @@ def respond(message: str, history: List[Dict[str, Any]], tier: str = "efficient"
         prompt = (f"Conversation so far:\n{_history_text(history)}\n\n"
                   f"Latest user message:\n{message}\n{_profile_line(profile)}\n\nReturn the JSON plan.")
         try:
-            raw = llm_complete(PLAN_SYSTEM + catalog_prompt(), prompt, tier, max_tokens=1536)
+            raw = llm_complete(PLAN_SYSTEM + catalog_prompt(), prompt, tier, max_tokens=1536, role="plan")
             plan = parse_plan(raw)
             if plan is None:
                 notices.append("The model's plan could not be parsed; used keyword matching instead.")
@@ -523,23 +775,65 @@ def respond(message: str, history: List[Dict[str, Any]], tier: str = "efficient"
     if tools:
         yield {"type": "status", "content": "Running calculations…"}
     results = run_tools(tools)
-    summary = summarise(results)
+    summary = summarise(results, tools)
     for t in tools:
         yield {"type": "tool", "data": t}
+
+    # Follow-up round: let the model chase a passing design when something failed,
+    # or (deep review) verify a selected part in a detail calculator.
+    failed = any(s.get("verdict") == "fail" or "error" in s for s in summary)
+    has_selector = any("selector" in t["calculator"] or t["calculator"].endswith("_required_c")
+                       for t in tools)
+    if configured and tools and (failed or (tier == "deep" and has_selector)):
+        yield {"type": "status", "content": "Exploring alternatives…" if failed else "Verifying the selection…"}
+        hints = "\n".join(f"- {cid}: {DESIGN_HINTS[cid]}"
+                          for cid in dict.fromkeys(t["calculator"] for t in tools) if cid in DESIGN_HINTS)
+        prompt = (f"Latest user message:\n{message}\n\n"
+                  f"Calculators already run and their results:\n{json.dumps(summary, ensure_ascii=False)[:9000]}\n\n"
+                  + (f"Design guidance for these calculators:\n{hints}\n\n" if hints else "")
+                  + "Return the follow-up JSON.")
+        try:
+            raw = llm_complete(PLAN_SYSTEM + catalog_prompt() + FOLLOWUP_INSTRUCTION, prompt, tier,
+                               max_tokens=1024, role="review")
+            follow = parse_plan(raw) or {"tools": []}
+            done = {(t["calculator"], json.dumps(t["inputs"], sort_keys=True)) for t in tools}
+            extra, extra_notes = normalise_tools({"tools": (follow.get("tools") or [])[:2]})
+            extra = [t for t in extra
+                     if (t["calculator"], json.dumps(t["inputs"], sort_keys=True)) not in done][:max(0, 5 - len(tools))]
+            if extra:
+                extra_results = run_tools(extra)
+                tools += extra
+                results += extra_results
+                summary = summarise(results, tools)
+                for t in extra:
+                    yield {"type": "tool", "data": t}
+            notices.extend(extra_notes)
+        except LLMError as e:
+            notices.append(f"Follow-up skipped: {e}")
 
     answer = ""
     if configured:
         yield {"type": "status", "content": "Reviewing results…"}
         prompt = (f"Conversation so far:\n{_history_text(history)}\n\n"
                   f"Latest user message:\n{message}\n{_profile_line(profile)}\n\n"
-                  f"Assumptions you made: {json.dumps(plan.get('assumptions') or [])}\n"
-                  f"Missing information: {json.dumps(plan.get('missing') or [])}\n\n"
-                  f"COMPUTED RESULTS (authoritative):\n{json.dumps(summary, indent=1)[:12000]}\n\n"
+                  f"Assumptions made when planning: {json.dumps(plan.get('assumptions') or [], ensure_ascii=False)}\n"
+                  f"Missing information: {json.dumps(plan.get('missing') or [], ensure_ascii=False)}\n\n"
+                  f"COMPUTED RESULTS with TOOL INPUTS (authoritative):\n"
+                  f"{json.dumps(summary, indent=1, ensure_ascii=False)[:14000]}\n\n"
                   "Write your reply.")
+        system = ANSWER_SYSTEM.replace("{word_limit}", str(WORD_LIMIT.get(tier, 170)))
         try:
-            for chunk in llm_stream(ANSWER_SYSTEM, prompt, tier, max_tokens=4096 if tier == "deep" else 2048):
+            stream = llm_stream(system, prompt, tier, max_tokens=2048 if tier == "deep" else 1200,
+                                role="review")
+            for chunk in stream:
                 answer += chunk
                 yield {"type": "token", "content": chunk}
+            # The provider's final text is authoritative; if live de-duplication missed a
+            # stream glitch, swap the shown text for it.
+            final_text = getattr(stream, "final", None)
+            if final_text and final_text.strip() and final_text.strip() != answer.strip():
+                answer = final_text
+                yield {"type": "replace_content", "content": answer}
         except LLMError as e:
             yield {"type": "notice", "level": "warn", "content": str(e)}
             notices.append(str(e))
@@ -548,7 +842,7 @@ def respond(message: str, history: List[Dict[str, Any]], tier: str = "efficient"
         answer = offline_answer(summary, configured=provider() != "offline")
         yield {"type": "token", "content": answer}
 
-    yield {"type": "final", "content": answer, "title": plan.get("title"),
+    yield {"type": "final", "content": answer.strip(), "title": plan.get("title"),
            "tool_data": {"tools": tools, "results": summary,
                          "assumptions": plan.get("assumptions") or [],
                          "missing": plan.get("missing") or [], "notices": notices}}

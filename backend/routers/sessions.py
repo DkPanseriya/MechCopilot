@@ -9,12 +9,6 @@ import traceback
 # Add parent dir to path to allow importing modules from backend root
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from llm_utils import run_llama, parse_llm_response, DynamicTool
-from prompts import get_system_prompt
-from physics_kernel import get_manifest
-import model_provider
-from model_provider import to_tool_data
-
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 # --- Pydantic Models ---

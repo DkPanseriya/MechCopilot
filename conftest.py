@@ -1,7 +1,7 @@
 """Pytest path setup.
 
 The backend mixes two import styles: package-style (`from backend.x import ...`,
-used by tests) and bare (`from physics_kernel import ...`, used at runtime because
+used by tests) and bare (`import copilot`, used at runtime because
 uvicorn runs from the backend directory). Put both the project root and the
 backend directory on sys.path so either style resolves during tests.
 """

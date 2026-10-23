@@ -9,14 +9,11 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 import copilot  # noqa: E402
-from agent import router as agent_router  # noqa: E402
 from database import init_db  # noqa: E402
 from routers.calculators import router as calculators_router  # noqa: E402
-from routers.compute import router as compute_router  # noqa: E402
 from routers.materials import router as materials_router  # noqa: E402
 from routers.reporting import router as reporting_router  # noqa: E402
 from routers.sessions import router as sessions_router  # noqa: E402
-from routers.workflow import router as workflow_router  # noqa: E402
 
 app = FastAPI(title="MechPartner API", version="1.0.0")
 
@@ -29,13 +26,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(agent_router, prefix="/api")
 app.include_router(sessions_router, prefix="/api")
-app.include_router(workflow_router, prefix="/api")
+app.include_router(calculators_router, prefix="/api")
 app.include_router(materials_router, prefix="/api")
 app.include_router(reporting_router, prefix="/api")
-app.include_router(compute_router, prefix="/api")
-app.include_router(calculators_router, prefix="/api")
 
 
 @app.on_event("startup")

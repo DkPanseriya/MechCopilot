@@ -40,7 +40,7 @@ calculator also opens directly from the **Calculator Library**, no chat needed.
 You need **Python 3.10+** and **Node.js 20+**.
 
 ```bash
-git clone https://github.com/<your-username>/mechpartner.git
+git clone https://github.com/DkPanseriya/mechpartner.git
 cd mechpartner
 ```
 
@@ -78,38 +78,47 @@ cd frontend && npm install && npm run dev
 
 ### Choosing the model
 
-By default the copilot uses **Claude Haiku 4.5** on Replicate for fast answers and **Claude Sonnet 4.6**
-for *Deep review*. Change them in `backend/.env`:
+The copilot runs on Claude via Replicate. In **Fast** mode a small model plans the calculation and a
+stronger one writes the answer; **Deep review** uses the strongest model for every step and digs
+further into alternatives. Change them in `backend/.env`:
 
 ```ini
-REPLICATE_MODEL=anthropic/claude-4.5-haiku
-REPLICATE_MODEL_DEEP=anthropic/claude-sonnet-4.6
+REPLICATE_MODEL=anthropic/claude-4.5-haiku          # plans the calculation (Fast)
+REPLICATE_MODEL_REVIEW=anthropic/claude-sonnet-4.6  # writes the answer (Fast)
+REPLICATE_MODEL_DEEP=anthropic/claude-sonnet-5      # every step in Deep review
 ```
 
 Any Replicate text model that accepts `prompt`, `system_prompt` and `max_tokens` works. An OpenAI key
-(`OPENAI_API_KEY`) is supported as an alternative. A typical question costs well under one cent with Haiku.
+(`OPENAI_API_KEY`) is supported as an alternative. A Fast question costs about 3–5 US cents on
+Replicate and takes 15–30 seconds; set `REPLICATE_MODEL_REVIEW` to the Haiku model for answers at
+well under one cent, at some cost in judgement.
 
 ## How it works
 
 ```
- your question ──► PLAN     the model reads the calculator catalog and picks calculators + inputs,
-                            stating every assumption it makes
-               ──► COMPUTE  the backend runs them on the engineering kernel (Python, Pint units)
-               ──► REVIEW   the model receives the computed numbers and writes the answer:
-                            recommendation, verdict, assumptions, parts, next checks
+ your question ──► PLAN      the model reads the calculator catalog and picks calculators + inputs,
+                             stating every assumption it makes
+               ──► COMPUTE   the backend runs them on the engineering kernel (Python, Pint units)
+               ──► ITERATE   if a check fails, the model tries a design change (bigger size, other
+                             bearing type, looser fit...) and the kernel runs it again
+               ──► REVIEW    the model receives the computed numbers and writes the answer:
+                             recommendation, why, assumptions to confirm, next checks
 ```
 
 The language model **never does the arithmetic** and never writes code that runs in your browser.
-It only chooses from a fixed library of calculators and explains their results. Every number you
-see comes from a tested formula: 347 automated tests check the calculators against textbook and
+It only chooses from a fixed library of calculators and explains their results; the answer may
+only quote numbers that the calculators produced or that you gave. Every number you see comes
+from a tested formula: 325 automated tests check the calculators against textbook and
 standard worked examples (Shigley, VDI 2230, ISO 281, ISO 286, closed-form beam cases) and verify
 that every calculator runs cleanly on its defaults and presets.
 
 - `backend/engineering/` — the calculator library. Each calculator is a typed definition
   (inputs with units, outputs, checks, plots, worked steps, references) — see
   [`general.py`](backend/engineering/general.py) for the reference pattern.
-- `backend/copilot.py` — plan → compute → review orchestration and model providers.
+- `backend/copilot.py` — plan, compute, iterate and review orchestration and model providers.
+- `backend/routers/` — FastAPI endpoints: chat sessions (streamed), calculators, materials, reports.
 - `frontend/components/calc/CalculatorView.tsx` — one renderer for every calculator.
+- `frontend/components/chat/ChatThread.tsx` — the chat, streaming answers with calculators inline.
 - `frontend/components/diagrams/` — annotated SVG diagrams, labelled with live values.
 
 ## Bearing data
@@ -137,6 +146,8 @@ built-in values for matching designations after a backend restart.
 .venv/bin/python -m pytest backend/tests -q     # backend: calculators, copilot, contract
 cd frontend && npx tsc --noEmit                 # frontend types
 ```
+
+The tests need no API key: the copilot tests use a fake model.
 
 Adding a calculator: create a `Calculator` in the relevant `backend/engineering/<domain>/` module,
 add its diagram to `frontend/components/diagrams/<domain>.tsx`, and add known-value tests. The

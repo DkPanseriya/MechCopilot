@@ -10,16 +10,14 @@ import {
 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import CalculatorView from "@/components/calc/CalculatorView";
-import WidgetRenderer from "@/components/WidgetRenderer";
 import OnboardingModal, { type Profile } from "@/components/OnboardingModal";
 
-type Tool = { type: string; calculator?: string; title?: string; inputs?: Record<string, any>; purpose?: string; [k: string]: any };
+type Tool = { type: string; calculator?: string; title?: string; inputs?: Record<string, any>; purpose?: string };
 
 interface ChatMessage {
     role: "user" | "assistant";
     content: string;
     tools: Tool[];
-    legacy?: any;           // pre-v1 single-widget tool_data
     notices: string[];
     assumptions: string[];
     missing: string[];
@@ -38,12 +36,12 @@ const EXAMPLES = [
 
 function fromStored(m: any): ChatMessage {
     const td = m.tool_data;
-    const tools = td && Array.isArray(td.tools) ? td.tools : [];
+    // Only library calculators are rendered; anything else (pre-v1 widgets) shows as text only.
+    const tools = td && Array.isArray(td.tools) ? td.tools.filter((t: Tool) => t.type === "calc" && t.calculator) : [];
     return {
         role: m.role === "user" ? "user" : "assistant",
         content: m.content || "",
         tools,
-        legacy: td && !Array.isArray(td?.tools) ? td : undefined,
         notices: td?.notices || [],
         assumptions: td?.assumptions || [],
         missing: td?.missing || [],
@@ -167,6 +165,7 @@ export default function ChatThread({ sessionId: initialId }: { sessionId: number
                         case "plan": patchLast((m) => ({ ...m, assumptions: ev.assumptions || [], missing: ev.missing || [] })); break;
                         case "tool": patchLast((m) => ({ ...m, tools: [...m.tools, ev.data] })); break;
                         case "token": patchLast((m) => ({ ...m, content: m.content + ev.content, status: undefined })); break;
+                        case "replace_content": patchLast((m) => ({ ...m, content: ev.content })); break;
                         case "error": patchLast((m) => ({ ...m, notices: [...m.notices, ev.content] })); break;
                         case "done": patchLast((m) => ({ ...m, pending: false, status: undefined })); break;
                     }
@@ -269,14 +268,11 @@ export default function ChatThread({ sessionId: initialId }: { sessionId: number
                                     </div>
                                 </div>
                             )}
-                            {m.role === "assistant" && (m.tools.length > 0 || m.legacy) && (
+                            {m.role === "assistant" && m.tools.length > 0 && (
                                 <div className="md:pl-11 space-y-4">
-                                    {m.tools.map((t, j) =>
-                                        t.type === "calc" && t.calculator
-                                            ? <CalculatorView key={`${i}-${j}`} calculatorId={t.calculator} initial={t.inputs} compact />
-                                            : <WidgetRenderer key={`${i}-${j}`} toolData={{ ...t, ui_spec: t } as any} />,
-                                    )}
-                                    {m.legacy && <WidgetRenderer toolData={m.legacy} />}
+                                    {m.tools.map((t, j) => t.calculator && (
+                                        <CalculatorView key={`${i}-${j}`} calculatorId={t.calculator} initial={t.inputs} compact />
+                                    ))}
                                 </div>
                             )}
                         </div>
