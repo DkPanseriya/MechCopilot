@@ -3,8 +3,10 @@ from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from datetime import datetime
 import os
 
-# Ensure DB is created in the backend directory or project root
-db_path = os.path.join(os.path.dirname(__file__), "mech_copilot.db")
+from appdata import data_dir
+
+# The backend folder when run from source; the user's profile in the installed app.
+db_path = os.path.join(data_dir(), "mech_copilot.db")
 DATABASE_URL = f"sqlite:///{db_path}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})

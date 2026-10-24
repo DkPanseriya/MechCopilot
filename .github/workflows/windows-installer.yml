@@ -1,0 +1,66 @@
+name: Windows installer
+
+# Builds MechCopilot-Setup-<version>.exe on Windows x64.
+#  - Run it by hand (Actions → Windows installer → Run workflow): the installer is attached to
+#    the run as an artifact, for testing.
+#  - Push a version tag (git tag v1.1.0 && git push origin v1.1.0): the installer is also
+#    published as a GitHub Release, which is the download page for users.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            desktop/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install build tools
+        shell: pwsh
+        run: |
+          python -m pip install -r backend/requirements.txt -r desktop/requirements.txt
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+
+      - name: Tests
+        run: python -m pytest backend/tests -q
+
+      - name: Build app and installer
+        shell: pwsh
+        run: |
+          $version = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "0.0.0-dev.${{ github.run_number }}" }
+          ./desktop/build.ps1 -Version $version
+          if (-not (Get-ChildItem dist/MechCopilot-Setup-*.exe)) { throw "No installer was built" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MechCopilot-Setup
+          path: dist/MechCopilot-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" (Get-ChildItem dist/MechCopilot-Setup-*.exe).FullName `
+            --title "MechCopilot ${{ github.ref_name }}" --generate-notes

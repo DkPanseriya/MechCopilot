@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
-import { PlusCircle, MessageSquare, History, Trash2, Pencil, Check, X, Database, Calculator } from "lucide-react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { PlusCircle, MessageSquare, History, Trash2, Pencil, Check, X, Database, Calculator, Settings } from "lucide-react";
 import { Session } from "@/types";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { API_BASE } from "@/lib/api";
@@ -14,6 +14,9 @@ export default function Sidebar() {
     const [editTitle, setEditTitle] = useState("");
     const router = useRouter();
     const pathname = usePathname();
+    const searchParams = useSearchParams();
+    // Chats live at /chat?id=N (query string, so the desktop app can ship pre-built pages).
+    const activeChat = pathname?.startsWith("/chat") ? searchParams.get("id") : null;
 
     const [status, setStatus] = useState<{ provider: string; model: string; configured: boolean; calculators: number; key_valid: boolean | null } | null>(null);
 
@@ -23,10 +26,24 @@ export default function Sidebar() {
 
     useEffect(() => {
         const refresh = () => fetchSessions();
+        const loadStatus = () =>
+            fetch(`${API_BASE}/api/status`).then((r) => r.json()).then(setStatus).catch(() => setStatus(null));
         window.addEventListener("mech:sessions-changed", refresh);
-        fetch(`${API_BASE}/api/status`).then((r) => r.json()).then(setStatus).catch(() => setStatus(null));
-        return () => window.removeEventListener("mech:sessions-changed", refresh);
+        window.addEventListener("mech:status-changed", loadStatus);   // after Settings saves a key
+        loadStatus();
+        return () => {
+            window.removeEventListener("mech:sessions-changed", refresh);
+            window.removeEventListener("mech:status-changed", loadStatus);
+        };
     }, []);
+
+    // First run: no key and setup never finished or skipped -> show the setup page once.
+    useEffect(() => {
+        if (!status || status.configured || pathname?.startsWith("/setup")) return;
+        let done = false;
+        try { done = localStorage.getItem("mech_setup_done") === "1"; } catch { /* private mode: ask again */ }
+        if (!done) router.replace("/setup");
+    }, [status, pathname, router]);
 
     // "anthropic/claude-4.5-haiku" -> "Claude Haiku 4.5"; other slugs are shown as-is.
     const modelName = (m: string) => {
@@ -60,7 +77,7 @@ export default function Sidebar() {
             const res = await fetch(`${API_BASE}/api/sessions/${id}`, { method: "DELETE" });
             if (res.ok) {
                 setSessions(prev => prev.filter(s => s.id !== id));
-                if (pathname === `/chat/${id}`) {
+                if (activeChat === String(id)) {
                     router.push("/");
                 }
             }
@@ -127,10 +144,18 @@ export default function Sidebar() {
 
             <Link
                 href="/materials"
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all mb-6 ${pathname === "/materials" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all mb-1 ${pathname === "/materials" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
             >
                 <Database size={16} />
                 Materials Library
+            </Link>
+
+            <Link
+                href="/setup"
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all mb-6 ${pathname?.startsWith("/setup") ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+            >
+                <Settings size={16} />
+                Settings
             </Link>
 
             <div className="flex-1 overflow-y-auto pr-2" suppressHydrationWarning>
@@ -139,8 +164,8 @@ export default function Sidebar() {
                     {sessions.map((session) => (
                         <Link
                             key={session.id}
-                            href={`/chat/${session.id}`}
-                            className={`group block px-3 py-2 rounded-lg text-sm truncate transition-colors relative ${pathname === `/chat/${session.id}`
+                            href={`/chat?id=${session.id}`}
+                            className={`group block px-3 py-2 rounded-lg text-sm truncate transition-colors relative ${activeChat === String(session.id)
                                 ? "bg-primary/10 text-primary font-medium"
                                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
                                 }`}
@@ -191,11 +216,11 @@ export default function Sidebar() {
 
             <div className="mt-auto pt-4 border-t border-border" suppressHydrationWarning>
                 <div className="flex items-center gap-3 px-2">
-                    <div className="min-w-0 flex-1" title={keyRejected
-                        ? "Replicate rejected REPLICATE_API_TOKEN in backend/.env. Paste a valid token (starts with r8_) and restart the backend."
+                    <Link href="/setup" className="min-w-0 flex-1" title={keyRejected
+                        ? "Your API key was rejected. Open Settings to paste a valid one."
                         : status?.configured
                             ? `Language model: ${status.model} via ${status.provider}`
-                            : "No API key found. Add REPLICATE_API_TOKEN to backend/.env and restart the backend for the full copilot. Calculators work without it."}>
+                            : "No API key yet. Open Settings to add your own key for the full copilot. Calculators work without it."}>
                         <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
                             <span className={`w-2 h-2 rounded-full shrink-0 ${status === null || keyRejected ? "bg-rose-500" : status.configured ? "bg-emerald-500" : "bg-amber-500"}`} />
                             <span className="truncate">
@@ -203,12 +228,12 @@ export default function Sidebar() {
                             </span>
                         </div>
                         <div className="text-[10px] text-muted-foreground truncate mt-0.5">
-                            {status === null ? "Start it on port 8001"
-                                : keyRejected ? "Fix the token in backend/.env"
+                            {status === null ? "Backend not reachable"
+                                : keyRejected ? "Fix the key in Settings"
                                 : status.configured ? `via ${status.provider} · ${status.calculators} calculators`
-                                : "Add a Replicate key to enable AI"}
+                                : "Add your key in Settings"}
                         </div>
-                    </div>
+                    </Link>
                     <ThemeToggle />
                 </div>
             </div>

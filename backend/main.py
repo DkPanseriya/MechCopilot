@@ -2,7 +2,9 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+from appdata import env_path  # noqa: E402
+
+load_dotenv(env_path())
 
 import uvicorn  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
@@ -14,6 +16,7 @@ from routers.calculators import router as calculators_router  # noqa: E402
 from routers.materials import router as materials_router  # noqa: E402
 from routers.reporting import router as reporting_router  # noqa: E402
 from routers.sessions import router as sessions_router  # noqa: E402
+from routers.settings import router as settings_router  # noqa: E402
 
 app = FastAPI(title="MechCopilot API", version="1.0.0")
 
@@ -30,16 +33,12 @@ app.include_router(sessions_router, prefix="/api")
 app.include_router(calculators_router, prefix="/api")
 app.include_router(materials_router, prefix="/api")
 app.include_router(reporting_router, prefix="/api")
+app.include_router(settings_router, prefix="/api")
 
 
 @app.on_event("startup")
 def on_startup():
     init_db()
-
-
-@app.get("/")
-async def root():
-    return {"message": "MechCopilot API is online", "docs": "/docs"}
 
 
 @app.get("/health")
@@ -51,6 +50,19 @@ async def health_check():
 def api_status():
     """Which language model is active (shown in the UI)."""
     return copilot.status()
+
+
+# The desktop app serves the built frontend from the same address as the API (one process,
+# no separate web server). Mounted last so every API route above takes precedence.
+WEB_DIR = os.getenv("MECH_WEB_DIR")
+if WEB_DIR and os.path.isdir(WEB_DIR):
+    from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+    app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
+else:
+    @app.get("/")
+    async def root():
+        return {"message": "MechCopilot API is online", "docs": "/docs"}
 
 
 if __name__ == "__main__":

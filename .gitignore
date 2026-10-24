@@ -38,3 +38,6 @@ frontend/.impeccable/
 
 # --- Eval reports (contain live model output) ---
 backend/evals/reports/
+
+# Desktop app build output (desktop/build.ps1)
+/dist/
