@@ -12,8 +12,12 @@ import { API_BASE } from "@/lib/api";
 import CalculatorView from "@/components/calc/CalculatorView";
 import OnboardingModal, { type Profile } from "@/components/OnboardingModal";
 import ClarifyForm, { type Clarify } from "@/components/chat/ClarifyForm";
+import type { Provenance } from "@/types/calculator";
 
-type Tool = { type: string; calculator?: string; title?: string; inputs?: Record<string, any>; purpose?: string };
+type Tool = {
+    type: string; calculator?: string; title?: string; inputs?: Record<string, any>; purpose?: string;
+    provenance?: Provenance; example?: boolean; provisional?: string[];
+};
 
 interface ChatMessage {
     role: "user" | "assistant";
@@ -283,7 +287,8 @@ export default function ChatThread({ sessionId: initialId }: { sessionId: number
                             {m.role === "assistant" && m.tools.length > 0 && (
                                 <div className="md:pl-11 space-y-4">
                                     {m.tools.map((t, j) => t.calculator && (
-                                        <CalculatorView key={`${i}-${j}`} calculatorId={t.calculator} initial={t.inputs} compact />
+                                        <CalculatorView key={`${i}-${j}`} calculatorId={t.calculator} initial={t.inputs} compact
+                                            provenance={t.provenance} example={t.example} provisional={t.provisional} />
                                     ))}
                                 </div>
                             )}

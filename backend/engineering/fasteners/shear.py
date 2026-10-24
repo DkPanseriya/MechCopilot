@@ -141,6 +141,7 @@ def _compute_shear(x: Dict[str, Any]) -> Dict[str, Any]:
 
 BOLT_SHEAR_JOINT = Calculator(
     id="bolt_shear_joint",
+    governing=["FEd", "thread", "n_bolts", "t"],
     title="Bolted lap joint in shear (EN 1993-1-8)",
     category=CATEGORY,
     summary="Bearing-type or slip-resistant (friction-grip) shear joint: bolt shear, plate bearing and slip resistance with edge-distance checks.",
@@ -298,6 +299,8 @@ def _compute_engagement(x: Dict[str, Any]) -> Dict[str, Any]:
 
 THREAD_ENGAGEMENT = Calculator(
     id="thread_engagement",
+    governing=["thread"],
+    trial=["LE"],
     title="Minimum thread engagement length",
     category=CATEGORY,
     summary="Required depth of thread engagement so a tapped hole (steel, aluminium, cast iron, brass) does not strip before the bolt breaks.",
@@ -438,6 +441,7 @@ def _compute_group(x: Dict[str, Any]) -> Dict[str, Any]:
 
 BOLT_GROUP_ECCENTRIC = Calculator(
     id="bolt_group_eccentric",
+    governing=["F", "Fx", "e", "thread", "rows", "cols", "px", "py", "n_circle", "radius"],
     title="Bolt group under eccentric shear",
     category=CATEGORY,
     summary="Forces in each bolt of a rectangular or circular pattern loaded off-centre (bracket, console), critical bolt and utilisation.",

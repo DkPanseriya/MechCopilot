@@ -324,8 +324,22 @@ def _compute_beam(x: Dict[str, Any]) -> Dict[str, Any]:
 
 
 _loads_group = "Loads"
+def _load_point(x: Dict[str, Any]):
+    """Default position for a point load or moment: the free tip of a cantilever, else mid-span."""
+    if x["support"] == "cantilever":
+        return x["L"], "tip of the cantilever"
+    return x["L"] / 2, "mid-span"
+
+
 BEAM_ANALYSIS = Calculator(
     id="beam_analysis",
+    derived_defaults={
+        "x1": _load_point,
+        "xm": _load_point,
+        "x_mid": lambda x: (x["L"] / 2, "mid-span"),
+        "b1": lambda x: (x["L"], "end of the beam"),
+    },
+    governing=["L", "support", "P1", "w1", "profile", "shape", "b", "h", "t", "D", "tw", "tf", "I_direct", "W_direct"],
     title="Beam analysis: shear, moment & deflection",
     category="Beams",
     summary="Any common support case with point loads, distributed loads and moments — "
@@ -488,6 +502,7 @@ def _compute_section(x: Dict[str, Any]) -> Dict[str, Any]:
 
 SECTION_PROPERTIES = Calculator(
     id="section_properties",
+    governing=["profile", "shape", "b", "h", "t", "D", "tw", "tf"],
     title="Section properties",
     category="Beams",
     summary="Area, second moments, section moduli, radii of gyration and mass for common "
@@ -672,6 +687,7 @@ for _p in _sel_material:
 
 PROFILE_SELECTOR = Calculator(
     id="beam_profile_selector",
+    governing=["L", "case", "w", "P", "W_req"],
     title="Beam profile selector",
     category="Beams",
     summary="Lightest standard IPE/HEA/HEB/UPN/SHS/RHS/CHS profile meeting a required section "

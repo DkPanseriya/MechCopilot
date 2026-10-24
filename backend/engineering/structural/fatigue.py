@@ -220,6 +220,7 @@ def _compute_fatigue(x: Dict[str, Any]) -> Dict[str, Any]:
 
 FATIGUE = Calculator(
     id="fatigue_life",
+    governing=["sa", "sm"],
     title="Fatigue strength & life (S–N)",
     category="Fatigue",
     summary="Marin-corrected endurance limit, Goodman/Gerber/ASME/Soderberg safety factors and finite life from the S–N curve.",
@@ -441,6 +442,7 @@ def _compute_scf(x: Dict[str, Any]) -> Dict[str, Any]:
 
 STRESS_CONCENTRATION = Calculator(
     id="stress_concentration",
+    governing=["D", "d", "r", "W", "dh"],
     title="Stress concentration Kt and Kf",
     category="Fatigue",
     summary="Kt for shoulder fillets, U-grooves and plate holes from Peterson curve fits, plus notch sensitivity and fatigue Kf.",

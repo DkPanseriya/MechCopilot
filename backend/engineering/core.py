@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pint
 
@@ -233,6 +233,16 @@ class Calculator:
     references: List[str] = field(default_factory=list)
     keywords: List[str] = field(default_factory=list)
     presets: List[Dict[str, Any]] = field(default_factory=list)
+    # Inputs that set the answer and have no safe engineering default (loads, speeds, spans,
+    # the size being checked). The copilot never computes a verdict with these at their
+    # demo default; it asks instead. Hidden params (show_if) are skipped.
+    governing: List[str] = field(default_factory=list)
+    # Size inputs the calculator also solves for ("Required diameter"): a default here is a
+    # trial value, not a missing input.
+    trial: List[str] = field(default_factory=list)
+    # Defaults that depend on other inputs, e.g. a cantilever's point load sits at the tip.
+    # fn(canonical inputs) -> (canonical value, reason). Used only when the input is not given.
+    derived_defaults: Dict[str, Callable[[Dict[str, Any]], Tuple[Any, str]]] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -240,7 +250,7 @@ class Calculator:
             "summary": self.summary, "description": self.description,
             "diagram": self.diagram, "formulas": self.formulas,
             "references": self.references, "keywords": self.keywords,
-            "presets": self.presets,
+            "presets": self.presets, "governing": self.governing, "trial": self.trial,
             "params": [p.to_dict() for p in self.params],
             "outputs": [o.to_dict() for o in self.outputs],
         }
@@ -391,10 +401,52 @@ def _convert_series(s: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def run_calculator(calc: Calculator, raw_inputs: Dict[str, Any]) -> Dict[str, Any]:
-    """Validate + convert inputs, compute, and format everything for display."""
+def is_unset(raw: Any) -> bool:
+    """True when an input was not given (absent, or a value-dict without a value)."""
+    if isinstance(raw, dict):
+        raw = raw.get("value")
+    return raw is None or raw == ""
+
+
+def is_visible(p: Param, values: Dict[str, Any]) -> bool:
+    """show_if against coerced input values (same rule as the frontend's isVisible)."""
+    if not p.show_if:
+        return True
+    return all(str(values.get(dep)) in [str(a) for a in allowed] for dep, allowed in p.show_if.items())
+
+
+def coerce_inputs(calc: Calculator, raw_inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """Canonical-unit inputs, with dependent defaults applied where an input is not given."""
     raw_inputs = raw_inputs or {}
     inputs = {p.name: _coerce_input(p, raw_inputs.get(p.name)) for p in calc.params}
+    for name, fn in calc.derived_defaults.items():
+        if is_unset(raw_inputs.get(name)):
+            inputs[name] = fn(inputs)[0]
+    return inputs
+
+
+def derived_inputs(calc: Calculator, raw_inputs: Dict[str, Any]) -> Dict[str, Tuple[Any, str]]:
+    """Dependent defaults for inputs not given, in each param's default input unit:
+    {name: ({"value", "unit"}, reason)}. Lets a caller show the value that will be used."""
+    raw_inputs = raw_inputs or {}
+    inputs = {p.name: _coerce_input(p, raw_inputs.get(p.name)) for p in calc.params}
+    by_name = {p.name: p for p in calc.params}
+    out: Dict[str, Tuple[Any, str]] = {}
+    for name, fn in calc.derived_defaults.items():
+        if not is_unset(raw_inputs.get(name)):
+            continue
+        value, why = fn(inputs)
+        p = by_name[name]
+        if p.kind == "number":
+            unit = p.to_dict()["unit"]
+            value = {"value": round(from_canonical(value, p.dim, unit), 10), "unit": unit}
+        out[name] = (value, why)
+    return out
+
+
+def run_calculator(calc: Calculator, raw_inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate + convert inputs, compute, and format everything for display."""
+    inputs = coerce_inputs(calc, raw_inputs)
 
     res = calc.compute(inputs) or {}
     values = res.get("values", {})

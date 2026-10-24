@@ -239,6 +239,8 @@ _feature_keys = list(FEATURES.keys())
 
 SHAFT_FATIGUE = Calculator(
     id="shaft_fatigue",
+    governing=["Ma", "Mm", "Ta", "Tm"],
+    trial=["d"],
     title="Shaft fatigue (DE-Goodman)",
     category="Shafts",
     summary="Fatigue safety factor and required diameter for a shaft under bending and torsion, "
@@ -480,6 +482,8 @@ for _i, (_m, _x) in enumerate([(10, 300), (0, 150), (0, 450)], start=1):
 
 SHAFT_CRITICAL_SPEED = Calculator(
     id="shaft_critical_speed",
+    governing=["L", "d", "n_op", "m1"],
+    derived_defaults={"x1": lambda x: (x["L"] / 2, "mid-span")},
     title="Shaft critical speed",
     category="Shafts",
     summary="First bending critical speed of a shaft with up to three point masses "

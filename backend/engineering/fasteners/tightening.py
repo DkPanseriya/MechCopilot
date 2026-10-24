@@ -97,6 +97,7 @@ def _compute_lookup(x: Dict[str, Any]) -> Dict[str, Any]:
 
 FASTENER_LOOKUP = Calculator(
     id="fastener_lookup",
+    governing=["thread"],
     title="Bolt, nut & hole dimensions",
     category=CATEGORY,
     summary="Full ISO dimensions for a metric bolt: thread, head, nut, washer, clearance hole, tap drill, proof load and a recommended tightening torque.",
@@ -235,6 +236,7 @@ def _compute_tightening(x: Dict[str, Any]) -> Dict[str, Any]:
 
 BOLT_PRELOAD_TORQUE = Calculator(
     id="bolt_preload_torque",
+    governing=["thread"],
     title="Tightening torque & preload (VDI 2230)",
     category=CATEGORY,
     summary="Tightening torque for a target preload, with friction condition, tightening-method scatter and a friction sensitivity plot.",

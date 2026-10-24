@@ -243,6 +243,7 @@ def _compute_compression(x: Dict[str, Any]) -> Dict[str, Any]:
 
 COMPRESSION_SPRING = Calculator(
     id="compression_spring",
+    governing=["F", "y", "d", "D", "Na", "L0"],
     title="Helical compression spring",
     category="Springs",
     summary="Rate, stress, solid length, buckling, surge frequency and Gerber–Zimmerli fatigue for a round-wire compression spring.",
@@ -408,6 +409,7 @@ def _compute_torsion(x: Dict[str, Any]) -> Dict[str, Any]:
 
 TORSION_SPRING = Calculator(
     id="torsion_spring",
+    governing=["M", "d", "D", "Nb"],
     title="Helical torsion spring",
     category="Springs",
     summary="Bending stress, angular rate, wind-up angle and arbor clearance for a helical torsion spring.",

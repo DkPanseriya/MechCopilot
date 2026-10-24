@@ -43,3 +43,13 @@ def test_cases_are_well_formed():
     for c in CASES:
         for cid in c.get("expect", {}).get("calculators_any", []):
             assert cid in CATALOG, (c["id"], cid)
+
+
+def test_grade_flags_silent_defaults_and_missing_terms():
+    case = {"id": "x", "question": "explain", "expect": {"must_mention_all": ["example"], "format": False}}
+    silent = [{"calculator": "round_bar_combined", "inputs": {}, "missing": ["F", "M", "T"]}]
+    bad = grade(case, _final("Bending and torsion combine as von Mises.", tools=silent), 170)
+    assert bad["checks"]["no silent defaults"] is False and bad["checks"]["mentions “example”"] is False
+    labelled = [{**silent[0], "example": True}]
+    good = grade(case, _final("Example with the default values: von Mises.", tools=labelled), 170)
+    assert good["checks"]["no silent defaults"] and "mentions “example”" not in good["checks"]

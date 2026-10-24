@@ -53,6 +53,8 @@ export interface CalculatorDef {
     presets: { label: string; values: Record<string, any> }[];
     params: CalcParam[];
     outputs: CalcOutputDef[];
+    governing?: string[];
+    trial?: string[];
 }
 
 export interface CatalogResponse {
@@ -123,3 +125,8 @@ export interface RunResult {
 
 // What a param value looks like in component state / API payloads.
 export type ParamValue = { value: number | string; unit: string } | string | number | boolean;
+
+// Where a copilot run's input came from: given by the user, assumed by the planner (with the
+// reason), derived from other inputs, or the calculator's default.
+export type InputSource = { source: "user" | "assumed" | "derived" | "default"; why?: string };
+export type Provenance = Record<string, InputSource>;

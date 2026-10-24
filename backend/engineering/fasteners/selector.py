@@ -169,6 +169,7 @@ def _compute_selector(x: Dict[str, Any]) -> Dict[str, Any]:
 
 FASTENER_SELECTOR = Calculator(
     id="fastener_selector",
+    governing=["FA", "FQ", "lK"],
     title="Which bolt? Fastener selector",
     category=CATEGORY,
     summary="Smallest standard ISO bolt size and property class for an axial and/or transverse load, with stock length, torque and full designation.",
