@@ -1,8 +1,8 @@
 name: Windows installer
 
 # Builds MechCopilot-Setup-<version>.exe on Windows x64.
-#  - Run it by hand (Actions → Windows installer → Run workflow): the installer is attached to
-#    the run as an artifact, for testing.
+#  - Run it by hand (Actions → Windows installer → Run workflow), or open a pull request that
+#    changes the packaging: the installer is attached to the run as an artifact, for testing.
 #  - Push a version tag (git tag v1.1.0 && git push origin v1.1.0): the installer is also
 #    published as a GitHub Release, which is the download page for users.
 
@@ -10,6 +10,13 @@ on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+  pull_request:          # a test installer for changes to the packaging (no release)
+    paths:
+      - "desktop/**"
+      - ".github/workflows/windows-installer.yml"
+      - "backend/appdata.py"
+      - "backend/main.py"
+      - "frontend/next.config.ts"
 
 permissions:
   contents: write
