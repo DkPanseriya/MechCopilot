@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, ChevronRight, Loader2 } from "lucide-react";
+import { Search, Loader2 } from "lucide-react";
+import CalcIcon from "@/components/icons/CalcIcon";
 import { getCatalog } from "@/lib/calcApi";
 import type { CatalogResponse } from "@/types/calculator";
 
@@ -34,13 +35,13 @@ export default function CalculatorLibrary() {
     }, [filtered]);
 
     return (
-        <div className="max-w-3xl mx-auto px-6 py-10">
+        <div className="max-w-5xl mx-auto px-6 py-10">
             <h1 className="text-2xl font-semibold text-foreground tracking-tight">Calculators</h1>
             <p className="text-sm text-muted-foreground mt-1.5">
                 Open one directly, or describe your problem in a design session and the copilot fills them in.
             </p>
 
-            <div className="relative mt-6 mb-8">
+            <div className="relative mt-6 mb-8 max-w-xl">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
                     value={q}
@@ -59,20 +60,25 @@ export default function CalculatorLibrary() {
             <div className="space-y-8">
                 {byCategory.map(([cat, calcs]) => (
                     <section key={cat}>
-                        <h2 className="text-sm font-medium text-foreground mb-1">{cat}</h2>
-                        <ul className="divide-y divide-border/60">
-                            {calcs.map((c) => (
-                                <li key={c.id}>
-                                    <Link href={`/calculators/view?id=${c.id}`}
-                                        className="group flex items-center gap-3 -mx-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 transition-colors">
-                                        <div className="min-w-0 flex-1">
-                                            <div className="text-sm text-foreground">{c.title}</div>
-                                            <div className="text-xs text-muted-foreground truncate mt-0.5">{c.summary}</div>
-                                        </div>
-                                        <ChevronRight size={15} className="text-muted-foreground/50 group-hover:text-foreground shrink-0 transition-colors" />
-                                    </Link>
-                                </li>
-                            ))}
+                        <h2 className="text-sm font-medium text-foreground mb-3">{cat}</h2>
+                        <ul className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(10rem,1fr))]">
+                            {calcs.map((c) => {
+                                // "Bolted joint under axial load (VDI 2230)" -> title + standard
+                                const m = c.title.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+                                return (
+                                    <li key={c.id}>
+                                        <Link href={`/calculators/view?id=${c.id}`} title={c.summary}
+                                            className="group flex h-full flex-col gap-3 rounded-xl border border-border/70 p-4 transition-colors duration-150 hover:border-blue-500/40 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">
+                                            <CalcIcon id={c.id} category={c.category}
+                                                className="h-11 w-11 text-foreground/70 transition-colors duration-150 group-hover:text-foreground" />
+                                            <div>
+                                                <div className="text-sm text-foreground leading-snug">{m ? m[1] : c.title}</div>
+                                                {m && <div className="text-xs text-muted-foreground mt-0.5">{m[2]}</div>}
+                                            </div>
+                                        </Link>
+                                    </li>
+                                );
+                            })}
                         </ul>
                     </section>
                 ))}

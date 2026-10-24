@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Loader2, Search } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 
 interface Material {
@@ -18,17 +18,32 @@ interface Material {
 
 type SortKey = "name" | "yield_strength" | "ultimate_strength" | "elastic_modulus" | "density";
 
-const COLUMNS: { key: SortKey; label: string; unit?: string; format: (m: Material) => string }[] = [
-    { key: "yield_strength", label: "Yield", unit: "MPa", format: (m) => (m.yield_strength / 1e6).toFixed(0) },
-    { key: "ultimate_strength", label: "Tensile", unit: "MPa", format: (m) => (m.ultimate_strength / 1e6).toFixed(0) },
-    { key: "elastic_modulus", label: "E", unit: "GPa", format: (m) => (m.elastic_modulus / 1e9).toFixed(0) },
-    { key: "density", label: "Density", unit: "kg/m³", format: (m) => new Intl.NumberFormat().format(m.density) },
+const SORTS: { key: SortKey; label: string }[] = [
+    { key: "name", label: "Name" },
+    { key: "yield_strength", label: "Yield" },
+    { key: "ultimate_strength", label: "Tensile" },
+    { key: "elastic_modulus", label: "Stiffness" },
+    { key: "density", label: "Density" },
 ];
 
-function SortIcon({ sort, k }: { sort: { key: SortKey; asc: boolean }; k: SortKey }) {
-    if (sort.key !== k) return null;
-    return sort.asc ? <ArrowUp size={12} /> : <ArrowDown size={12} />;
-}
+// One colour per material family, so a family reads at a glance (the swatch and its bars).
+const FAMILY: Record<string, string> = {
+    "Structural Steel": "oklch(0.62 0.05 250)",
+    "Carbon Steel": "oklch(0.6 0.045 245)",
+    "Alloy Steel": "oklch(0.58 0.08 265)",
+    "Stainless Steel": "oklch(0.8 0.02 250)",
+    "Aluminium Alloy": "oklch(0.76 0.08 225)",
+    "Titanium Alloy": "oklch(0.7 0.09 300)",
+    "Cast Iron": "oklch(0.55 0.02 60)",
+    "Copper Alloy": "oklch(0.72 0.12 65)",
+};
+const familyColour = (m: Material) => FAMILY[m.sub_category] ?? "oklch(0.72 0.12 160)"; // plastics
+
+const BARS: { key: "ultimate_strength" | "elastic_modulus" | "density"; label: string; format: (m: Material) => string }[] = [
+    { key: "ultimate_strength", label: "Tensile", format: (m) => `${(m.ultimate_strength / 1e6).toFixed(0)} MPa` },
+    { key: "elastic_modulus", label: "Stiffness", format: (m) => `${(m.elastic_modulus / 1e9).toFixed(0)} GPa` },
+    { key: "density", label: "Density", format: (m) => `${(m.density / 1000).toFixed(2)} g/cm³` },
+];
 
 export default function MaterialsPage() {
     const [materials, setMaterials] = useState<Material[]>([]);
@@ -36,7 +51,7 @@ export default function MaterialsPage() {
     const [error, setError] = useState(false);
     const [q, setQ] = useState("");
     const [category, setCategory] = useState("All");
-    const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: "name", asc: true });
+    const [sort, setSort] = useState<SortKey>("name");
 
     useEffect(() => {
         fetch(`${API_BASE}/api/materials/`)
@@ -47,30 +62,26 @@ export default function MaterialsPage() {
     }, []);
 
     const categories = useMemo(() => ["All", ...new Set(materials.map((m) => m.category))], [materials]);
+    // Bars compare each material with the strongest / stiffest / densest in the library.
+    const max = useMemo(() => Object.fromEntries(
+        BARS.map((b) => [b.key, Math.max(1, ...materials.map((m) => m[b.key]))])) as Record<string, number>, [materials]);
 
-    const rows = useMemo(() => {
+    const tiles = useMemo(() => {
         const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
         const list = materials.filter((m) => {
             const hay = `${m.name} ${m.sub_category} ${m.description}`.toLowerCase();
             return (category === "All" || m.category === category) && terms.every((t) => hay.includes(t));
         });
-        const dir = sort.asc ? 1 : -1;
-        return list.sort((a, b) => (sort.key === "name"
-            ? a.name.localeCompare(b.name) : (a[sort.key] - b[sort.key])) * dir);
+        return list.sort((a, b) => (sort === "name" ? a.name.localeCompare(b.name) : b[sort] - a[sort]));
     }, [materials, q, category, sort]);
 
-    const sortBy = (key: SortKey) =>
-        setSort((s) => (s.key === key ? { key, asc: !s.asc } : { key, asc: key === "name" }));
-
     return (
-        <div className="max-w-4xl mx-auto px-6 py-10">
+        <div className="max-w-5xl mx-auto px-6 py-10">
             <h1 className="text-2xl font-semibold text-foreground tracking-tight">Materials</h1>
-            <p className="text-sm text-muted-foreground mt-1.5">
-                Typical properties of common engineering materials. Click a column to sort.
-            </p>
+            <p className="text-sm text-muted-foreground mt-1.5">Typical properties of common engineering materials.</p>
 
             <div className="flex flex-wrap items-center gap-3 mt-6 mb-6">
-                <div className="relative flex-1 min-w-[14rem]">
+                <div className="relative flex-1 min-w-[14rem] max-w-md">
                     <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                     <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search: S355, aluminium, PEEK…"
                         aria-label="Search materials"
@@ -84,50 +95,54 @@ export default function MaterialsPage() {
                         </button>
                     ))}
                 </div>
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                    Sort
+                    <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}
+                        className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/40">
+                        {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                    </select>
+                </label>
             </div>
 
             {loading && <div className="text-sm text-muted-foreground flex items-center gap-2"><Loader2 size={14} className="animate-spin" />Loading…</div>}
             {error && <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-4 text-sm text-rose-500">Could not load the materials. Is the backend running?</div>}
+            {!loading && !error && tiles.length === 0 && <p className="text-sm text-muted-foreground">No material matches these filters.</p>}
 
-            {!loading && !error && (
-                rows.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No material matches these filters.</p>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm tabular-nums">
-                            <thead className="text-xs text-muted-foreground">
-                                <tr>
-                                    <th className="text-left font-normal py-2 pr-4">
-                                        <button type="button" onClick={() => sortBy("name")} className="inline-flex items-center gap-1 hover:text-foreground">
-                                            Material <SortIcon sort={sort} k="name" />
-                                        </button>
-                                    </th>
-                                    {COLUMNS.map((c) => (
-                                        <th key={c.key} className="text-right font-normal py-2 pl-4 whitespace-nowrap">
-                                            <button type="button" onClick={() => sortBy(c.key)} className="inline-flex items-center gap-1 hover:text-foreground">
-                                                <SortIcon sort={sort} k={c.key} />{c.label} <span className="text-muted-foreground/70">{c.unit}</span>
-                                            </button>
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {rows.map((m) => (
-                                    <tr key={m.id} className="border-t border-border/60" title={m.description}>
-                                        <td className="py-2 pr-4">
-                                            <div className="text-foreground">{m.name}</div>
-                                            <div className="text-xs text-muted-foreground">{m.sub_category}</div>
-                                        </td>
-                                        {COLUMNS.map((c) => (
-                                            <td key={c.key} className="py-2 pl-4 text-right text-foreground">{c.format(m)}</td>
-                                        ))}
-                                    </tr>
+            <ul className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]">
+                {tiles.map((m) => {
+                    const colour = familyColour(m);
+                    return (
+                        <li key={m.id} title={m.description}
+                            className="rounded-xl border border-border/70 p-4 transition-colors duration-150 hover:border-border hover:bg-muted/30">
+                            <div className="flex items-start gap-3">
+                                {/* swatch with a soft sheen, like a polished sample */}
+                                <span className="h-9 w-9 shrink-0 rounded-lg ring-1 ring-inset ring-white/10"
+                                    style={{ background: `linear-gradient(135deg, color-mix(in oklch, ${colour} 70%, white) 0%, ${colour} 55%, color-mix(in oklch, ${colour} 80%, black) 100%)` }} />
+                                <div className="min-w-0">
+                                    <div className="text-sm text-foreground leading-snug">{m.name}</div>
+                                    <div className="text-xs text-muted-foreground">{m.sub_category}</div>
+                                </div>
+                            </div>
+                            <div className="mt-4 flex items-baseline gap-1.5">
+                                <span className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">{(m.yield_strength / 1e6).toFixed(0)}</span>
+                                <span className="text-xs text-muted-foreground">MPa yield</span>
+                            </div>
+                            <dl className="mt-3 space-y-1.5">
+                                {BARS.map((b) => (
+                                    <div key={b.key} className="grid grid-cols-[3.75rem_1fr_4.5rem] items-center gap-2 text-xs">
+                                        <dt className="text-muted-foreground">{b.label}</dt>
+                                        <dd className="h-1.5 rounded-full bg-muted overflow-hidden">
+                                            <span className="block h-full rounded-full"
+                                                style={{ width: `${Math.max(3, (100 * m[b.key]) / max[b.key])}%`, background: colour }} />
+                                        </dd>
+                                        <dd className="text-right tabular-nums text-muted-foreground">{b.format(m)}</dd>
+                                    </div>
                                 ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )
-            )}
+                            </dl>
+                        </li>
+                    );
+                })}
+            </ul>
         </div>
     );
 }
