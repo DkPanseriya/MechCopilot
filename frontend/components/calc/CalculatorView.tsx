@@ -156,13 +156,22 @@ function Section({ title, children, defaultOpen = true, icon }: { title: string;
     );
 }
 
-export default function CalculatorView({ calculatorId, initial, compact = false, provenance, example, provisional }: {
+export default function CalculatorView({
+    calculatorId, initial, compact = false, provenance, example, provisional, editedNames, onEdit,
+}: {
     calculatorId: string; initial?: Record<string, any>; compact?: boolean;
     provenance?: Provenance; example?: boolean; provisional?: string[];
+    /** Inputs the user already changed in this card (restored from the session). */
+    editedNames?: string[];
+    /** Called with the full input payload after each successful run the user caused. */
+    onEdit?: (inputs: Record<string, any>) => void;
 }) {
     const [def, setDef] = useState<CalculatorDef | null>(null);
     // Inputs changed in the card are the user's own; a preset or reset replaces every input.
-    const [edited, setEdited] = useState<Set<string>>(new Set());
+    const [edited, setEdited] = useState<Set<string>>(() => new Set(editedNames ?? []));
+    const userChanged = useRef(false);   // the initial run is the copilot's, not an edit
+    const onEditRef = useRef(onEdit);
+    onEditRef.current = onEdit;
     const [detached, setDetached] = useState(false);
     const [units, setUnits] = useState<UnitChoices>({});
     const [values, setValues] = useState<Values>({});
@@ -204,6 +213,7 @@ export default function CalculatorView({ calculatorId, initial, compact = false,
             try {
                 const r = await runCalculator(def.id, payload, ctrl.signal);
                 setResult(r);
+                if (userChanged.current) onEditRef.current?.(payload);
                 setError(null);
             } catch (e: any) {
                 if (e?.name === "AbortError") return;
@@ -218,8 +228,9 @@ export default function CalculatorView({ calculatorId, initial, compact = false,
     const setValue = useCallback((name: string, v: ParamValue) => {
         setValues((prev) => ({ ...prev, [name]: v }));
         setEdited((prev) => (prev.has(name) ? prev : new Set(prev).add(name)));
+        userChanged.current = true;
     }, []);
-    const replaceAll = (next: Values) => { setValues(next); setDetached(true); };
+    const replaceAll = (next: Values) => { setValues(next); setDetached(true); userChanged.current = true; };
     const sourceOf = (name: string): InputSource | undefined => {
         if (!provenance || detached) return undefined;
         return edited.has(name) ? { source: "user", why: "changed in the card" } : provenance[name];
