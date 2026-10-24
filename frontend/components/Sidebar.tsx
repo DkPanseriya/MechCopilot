@@ -121,51 +121,51 @@ export default function Sidebar() {
         <div suppressHydrationWarning className="w-64 border-r border-border p-4 flex flex-col bg-muted/40 h-screen fixed left-0 top-0 overflow-y-auto z-50 transition-colors duration-300">
             <div className="mb-8" suppressHydrationWarning>
                 <a href="/" className="flex items-center gap-2">
-                    <h1 className="text-xl font-bold tracking-tight text-foreground">Mech<span className="text-blue-500">Copilot</span> <span className="text-xs text-muted-foreground font-normal">v1.0</span></h1>
+                    <h1 className="text-lg font-semibold tracking-tight text-foreground">Mech<span className="text-blue-500">Copilot</span></h1>
                 </a>
             </div>
 
             {/* Full navigation so the chat state always resets, even if we're already on "/". */}
             <a
                 href="/"
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all mb-2"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-foreground text-sm hover:bg-muted transition-colors mb-3"
             >
-                <PlusCircle size={16} />
-                New Design Session
+                <PlusCircle size={16} className="text-blue-500" />
+                New design
             </a>
 
             <Link
                 href="/calculators"
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all mb-1 ${pathname?.startsWith("/calculators") ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors mb-1 ${pathname?.startsWith("/calculators") ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
             >
                 <Calculator size={16} />
-                Calculator Library
+                Calculators
             </Link>
 
             <Link
                 href="/materials"
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all mb-1 ${pathname === "/materials" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors mb-1 ${pathname === "/materials" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
             >
                 <Database size={16} />
-                Materials Library
+                Materials
             </Link>
 
             <Link
                 href="/setup"
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all mb-6 ${pathname?.startsWith("/setup") ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors mb-6 ${pathname?.startsWith("/setup") ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
             >
                 <Settings size={16} />
                 Settings
             </Link>
 
             <div className="flex-1 overflow-y-auto pr-2" suppressHydrationWarning>
-                <div className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider px-2">History</div>
+                <div className="text-xs text-muted-foreground mb-2 px-3">Recent</div>
                 <div className="space-y-1">
                     {sessions.map((session) => (
                         <Link
                             key={session.id}
                             href={`/chat?id=${session.id}`}
-                            className={`group block px-3 py-2 rounded-lg text-sm truncate transition-colors relative ${activeChat === String(session.id)
+                            className={`group block px-3 py-1.5 rounded-lg text-sm truncate transition-colors relative ${activeChat === String(session.id)
                                 ? "bg-primary/10 text-primary font-medium"
                                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
                                 }`}
