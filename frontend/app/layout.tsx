@@ -10,6 +10,7 @@ export const metadata: Metadata = {
   description: 'AI-Powered Mechanical Design Assistant',
 }
 
+import { Suspense } from 'react'
 import { ThemeProvider } from '@/components/ThemeProvider'
 import Sidebar from '@/components/Sidebar'
 
@@ -27,7 +28,9 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <Sidebar />
+          <Suspense fallback={null}>
+            <Sidebar />
+          </Suspense>
           <main className="pl-64 min-h-screen">
             {children}
           </main>

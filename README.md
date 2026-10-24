@@ -35,7 +35,23 @@ standard it follows. Change any input and everything recalculates.
 full list with inputs and references is in [docs/CALCULATORS.md](docs/CALCULATORS.md). Every
 calculator also opens directly from the **Calculator Library**, no chat needed.
 
-## Quick start
+## Install (Windows)
+
+1. Download **`MechCopilot-Setup-<version>.exe`** from the
+   [latest release](https://github.com/DkPanseriya/MechCopilot/releases/latest).
+2. Run it and click through the installer. It installs for your user only, so it needs no
+   administrator rights.
+3. MechCopilot opens in its own window. On first start it asks for **your own** AI key
+   (a [Replicate API token](https://replicate.com/account/api-tokens), or an OpenAI key), or you
+   choose *Calculators only*. Change it any time under **Settings**.
+
+Your key, chats and settings stay on your computer in `%LOCALAPPDATA%\MechCopilot`; the key is
+sent only to the provider you chose. Uninstalling keeps that folder, so a reinstall keeps your work.
+
+The installer is not code-signed yet, so Windows SmartScreen may say *"Windows protected your
+PC"*: click **More info → Run anyway**.
+
+## Run from source
 
 You need **Python 3.10+** and **Node.js 20+**.
 
@@ -58,8 +74,9 @@ The app runs at <http://localhost:3000>, the API at <http://127.0.0.1:8001> (doc
 The first launch builds the frontend (about a minute); later launches start in seconds. Working on
 the code? Run `start.bat dev` / `./start.sh dev` for hot reload.
 
-Changed your key later? Edit `REPLICATE_API_TOKEN` in `backend/.env` and restart. The status in
-the bottom-left of the sidebar shows which model is active and whether the key was accepted.
+Changed your key later? Open **Settings** in the sidebar, or edit `REPLICATE_API_TOKEN` in
+`backend/.env` and restart. The status in the bottom-left of the sidebar shows which model is
+active and whether the key was accepted.
 
 <details>
 <summary>Manual setup</summary>
@@ -161,6 +178,13 @@ cd backend && ../.venv/bin/python -m evals.run --judge
 Adding a calculator: create a `Calculator` in the relevant `backend/engineering/<domain>/` module,
 add its diagram to `frontend/components/diagrams/<domain>.tsx`, and add known-value tests. The
 registry tests automatically check that every calculator runs on its defaults and presets.
+
+Building the Windows app: `.\desktop\build.ps1 -Version 1.2.0` (PowerShell) builds the frontend as
+static files, packages everything with PyInstaller into `dist\MechCopilot\` and, if
+[Inno Setup 6](https://jrsoftware.org/isinfo.php) is installed, the installer
+`dist\MechCopilot-Setup-1.2.0.exe`. Install the packaging tools first with
+`pip install -r desktop/requirements.txt`. The *Windows installer* GitHub workflow does the same on
+Windows x64; pushing a `v*` tag publishes the installer as a release.
 
 ## Disclaimer
 

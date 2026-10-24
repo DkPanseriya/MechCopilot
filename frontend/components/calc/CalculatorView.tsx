@@ -439,7 +439,7 @@ export default function CalculatorView({
                     </span>
                 )}
                 {compact && (
-                    <Link href={`/calculators/${def.id}`} title="Open full calculator"
+                    <Link href={`/calculators/view?id=${def.id}`} title="Open full calculator"
                         className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted">
                         <Maximize2 size={14} />
                     </Link>

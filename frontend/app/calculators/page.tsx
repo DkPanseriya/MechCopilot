@@ -66,7 +66,7 @@ export default function CalculatorLibrary() {
                         </h2>
                         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                             {calcs.map((c) => (
-                                <Link key={c.id} href={`/calculators/${c.id}`}
+                                <Link key={c.id} href={`/calculators/view?id=${c.id}`}
                                     className="group rounded-xl border border-border bg-card p-4 hover:border-blue-500/50 transition-colors">
                                     <div className="flex items-start justify-between gap-2">
                                         <h3 className="font-medium text-foreground leading-snug">{c.title}</h3>

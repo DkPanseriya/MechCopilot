@@ -18,7 +18,11 @@ import os
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
-USER_FILE = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "user", "bearings.csv"))
+try:  # the backend's settings folder (the user's profile in the installed app)
+    from appdata import user_data_dir
+    USER_FILE = os.path.join(user_data_dir(), "bearings.csv")
+except ImportError:  # engineering used on its own
+    USER_FILE = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "user", "bearings.csv"))
 
 SKF_SEARCH = "https://www.skf.com/group/search-results?q={q}"
 SKF_DGBB_PAGE = ("https://www.skf.com/group/products/rolling-bearings/ball-bearings/"

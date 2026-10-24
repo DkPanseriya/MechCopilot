@@ -136,7 +136,7 @@ export default function ChatThread({ sessionId: initialId }: { sessionId: number
         if (!res.ok) throw new Error("Could not create a session");
         const data = await res.json();
         setSid(data.id);
-        window.history.replaceState(null, "", `/chat/${data.id}`);
+        window.history.replaceState(null, "", `/chat?id=${data.id}`);
         window.dispatchEvent(new Event("mech:sessions-changed"));
         return data.id;
     };
