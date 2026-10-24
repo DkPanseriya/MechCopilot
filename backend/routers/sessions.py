@@ -29,7 +29,7 @@ class SessionResponse(BaseModel):
     created_at: str
     
     class Config:
-        orm_mode = True # Allow ORM objects to be returned
+        from_attributes = True  # build from ORM objects
 
 class SessionDetail(SessionResponse):
     messages: List[MessageSchema]
@@ -70,7 +70,7 @@ def get_session(session_id: int, db: Session = Depends(get_db)):
         ) for m in session.messages
     ]
     
-    sess_dict = convert_session(session).dict()
+    sess_dict = convert_session(session).model_dump()
     sess_dict["messages"] = messages
     return sess_dict
 

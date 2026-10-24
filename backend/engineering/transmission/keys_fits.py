@@ -377,6 +377,8 @@ def _compute_interference(x: Dict[str, Any]) -> Dict[str, Any]:
     vm_h = _vm2(st_h, -p_max)
     st_s = -p_max * (d ** 2 + di ** 2) / (d ** 2 - di ** 2)
     vm_s = _vm2(st_s, -p_max)
+    if di > 0:  # hollow shaft: the bore (sigma_r = 0) carries the highest stress, Shigley eq. 3-50 at r = ri
+        vm_s = max(vm_s, 2 * p_max * d ** 2 / (d ** 2 - di ** 2))
     n_hub, n_shaft = hub["Sy"] / vm_h, sh["Sy"] / vm_s
     dT = (dmax + 0.001 * d) / (hub["alpha"] * d)
 

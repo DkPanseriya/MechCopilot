@@ -87,3 +87,12 @@ def test_unverifiable_key_is_saved_with_a_flag(data, monkeypatch):
     monkeypatch.setattr(settings, "check_key", lambda provider, key: None)   # no internet
     out = settings.save_settings(settings.SettingsUpdate(provider="replicate", api_key="r8_offline123456"))
     assert out["verified"] is None and "r8_offline123456" in _env(data)
+
+
+def test_write_env_refuses_a_line_break(tmp_path, monkeypatch):
+    from routers import settings
+    monkeypatch.setattr(settings, "env_path", lambda: str(tmp_path / ".env"))
+    import pytest
+    with pytest.raises(ValueError):
+        settings.write_env({"REPLICATE_MODEL": "x\nALLOWED_ORIGINS=*"})
+    assert not (tmp_path / ".env").exists()

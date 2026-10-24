@@ -289,3 +289,10 @@ def test_kt_plate_hole():
 def test_scf_error():
     with pytest.raises(CalcError):
         run_calculator(CATALOG["stress_concentration"], {"D": mm(20), "d": mm(30)})
+
+
+def test_column_fixed_free_recommended_value():
+    base = {"section": "round", "d": mm(20), "L": mm(2000), "P": {"value": 1, "unit": "kN"}, **custom()}
+    p1 = out(run_calculator(CATALOG["column_buckling"], {**base, "ends": "pinned_pinned"}), "Pcr")["value"]
+    p2 = out(run_calculator(CATALOG["column_buckling"], {**base, "ends": "fixed_free_rec"}), "Pcr")["value"]
+    assert p2 == pytest.approx(p1 / 2.1 ** 2, rel=1e-6)

@@ -244,3 +244,16 @@ def test_drive_loads_spur_has_no_axial_force_and_coupling_no_shaft_load():
 def test_drive_loads_rejects_zero_speed():
     with pytest.raises(CalcError):
         run("drive_loads", {"n": 0})
+
+
+def test_interference_hollow_shaft_is_checked_at_the_bore():
+    # Shigley eq. 3-50 at r = ri: sigma_r = 0, sigma_t = -2 p d^2 / (d^2 - di^2), the highest stress in the shaft
+    res = run("interference_fit", {"di": {"value": 30, "unit": "mm"}})
+    p = out(res, "p_max")
+    assert out(res, "vm_shaft") == pytest.approx(2 * p * 40 ** 2 / (40 ** 2 - 30 ** 2), rel=1e-6)
+
+
+def test_iso286_m6_special_case_250_to_315():
+    # ISO 286-2: for M6 over 250 up to 315 mm, ES = -9 um instead of -11 um
+    assert iso286.hole_deviations(280, "M", 6) == pytest.approx((-9, -41))
+    assert iso286.hole_deviations(200, "M", 6)[0] != -9

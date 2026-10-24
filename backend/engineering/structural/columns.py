@@ -8,7 +8,8 @@ from ..materials import material_params, resolve_material
 END_CONDITIONS = {
     # key: (label, effective length factor K)
     "pinned_pinned": ("Pinned – pinned (K = 1.0)", 1.0),
-    "fixed_free": ("Fixed – free / flagpole (K = 2.0)", 2.0),
+    "fixed_free": ("Fixed – free / flagpole, theoretical (K = 2.0)", 2.0),
+    "fixed_free_rec": ("Fixed – free / flagpole, recommended (K = 2.1)", 2.1),
     "fixed_pinned": ("Fixed – pinned, theoretical (K = 0.7)", 0.7),
     "fixed_pinned_rec": ("Fixed – pinned, recommended (K = 0.8)", 0.8),
     "fixed_fixed": ("Fixed – fixed, theoretical (K = 0.5)", 0.5),

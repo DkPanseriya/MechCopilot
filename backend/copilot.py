@@ -25,6 +25,7 @@ import pint
 from engineering.core import (CalcError, UNIT_CHOICES, coerce_inputs, derived_inputs, is_visible,
                               run_calculator, to_canonical, unit_label, ureg)
 from engineering.registry import CATALOG, ordered
+from evals.grader import grounding
 
 
 def extract_balanced_json(text: str, start: int) -> Optional[str]:
@@ -960,6 +961,36 @@ def _inputs_display(tool: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def results_for_review(summary: List[Dict[str, Any]], limit: int = 14000) -> str:
+    """The computed results as valid JSON within `limit` characters. Cutting the JSON text
+    mid-way would hand the review model broken data it might fill in from memory, so detail
+    goes first (tables, notes, links), then whole results, and what was left out is said."""
+    text = json.dumps(summary, indent=1, ensure_ascii=False)
+    if len(text) <= limit:
+        return text
+    lean = [{k: v for k, v in s.items() if k not in ("tables", "notes", "links")} for s in summary]
+    kept: List[Dict[str, Any]] = []
+    for s in lean:
+        if len(json.dumps(kept + [s], indent=1, ensure_ascii=False)) > limit - 200:
+            break
+        kept.append(s)
+    if len(kept) < len(lean):
+        kept.append({"omitted": f"{len(lean) - len(kept)} more results not shown here; do not quote numbers for them"})
+    return json.dumps(kept, indent=1, ensure_ascii=False)
+
+
+def ungrounded_numbers(answer: str, message: str, history: List[Dict[str, Any]],
+                       summary: List[Dict[str, Any]], tools: List[Dict[str, Any]],
+                       assumptions: List[Any]) -> List[str]:
+    """Numbers in a model-written answer that no calculation, input, assumption or earlier
+    message produced. The prompt forbids them; this checks that the model complied."""
+    sources = "\n".join([message, _history_text(history),
+                         json.dumps(summary, ensure_ascii=False),
+                         json.dumps(tools, ensure_ascii=False, default=str),
+                         json.dumps(assumptions, ensure_ascii=False, default=str)])
+    return grounding(answer, sources)["ungrounded"]
+
+
 def summarise(results: List[Dict[str, Any]],
               tools: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """Compact, model-friendly digest of each run (also stored for reports).
@@ -1182,7 +1213,7 @@ def respond(message: str, history: List[Dict[str, Any]], tier: str = "efficient"
                   f"Assumptions made when planning: {json.dumps(plan.get('assumptions') or [], ensure_ascii=False)}\n"
                   f"Missing information: {json.dumps(plan.get('missing') or [], ensure_ascii=False)}\n\n"
                   f"COMPUTED RESULTS with TOOL INPUTS (authoritative):\n"
-                  f"{json.dumps(summary, indent=1, ensure_ascii=False)[:14000]}\n\n"
+                  f"{results_for_review(summary)}\n\n"
                   "Write your reply.")
         system = ANSWER_SYSTEM.replace("{word_limit}", str(WORD_LIMIT.get(tier, 170)))
         try:
@@ -1201,6 +1232,13 @@ def respond(message: str, history: List[Dict[str, Any]], tier: str = "efficient"
             yield {"type": "notice", "level": "warn", "content": str(e)}
             notices.append(str(e))
             configured = False
+    if answer:
+        loose = ungrounded_numbers(answer, message, history, summary, tools, plan.get("assumptions") or [])
+        if loose:
+            note = ("Not from a calculation or your input, so unverified: "
+                    + ", ".join(dict.fromkeys(loose)) + ".")
+            notices.append(note)
+            yield {"type": "notice", "level": "warn", "content": note}
     if not answer:
         answer = offline_answer(summary, configured=provider() != "offline")
         yield {"type": "token", "content": answer}
