@@ -17,9 +17,12 @@ import type { Provenance } from "@/types/calculator";
 type Tool = {
     type: string; calculator?: string; title?: string; inputs?: Record<string, any>; purpose?: string;
     provenance?: Provenance; example?: boolean; provisional?: string[];
+    // inputs the user changed in the card, stored with the reply and re-run on the server
+    edited?: { inputs: Record<string, any>; changed: string[]; verdict: string };
 };
 
 interface ChatMessage {
+    id?: number;
     role: "user" | "assistant";
     content: string;
     tools: Tool[];
@@ -50,6 +53,7 @@ function fromStored(m: any): ChatMessage {
     // Only library calculators are rendered; anything else (pre-v1 widgets) shows as text only.
     const tools = td && Array.isArray(td.tools) ? td.tools.filter((t: Tool) => t.type === "calc" && t.calculator) : [];
     return {
+        id: m.id ?? undefined,
         role: m.role === "user" ? "user" : "assistant",
         content: m.content || "",
         tools,
@@ -180,6 +184,7 @@ export default function ChatThread({ sessionId: initialId }: { sessionId: number
                         case "token": patchLast((m) => ({ ...m, content: m.content + ev.content, status: undefined })); break;
                         case "replace_content": patchLast((m) => ({ ...m, content: ev.content })); break;
                         case "error": patchLast((m) => ({ ...m, notices: [...m.notices, ev.content] })); break;
+                        case "saved": patchLast((m) => ({ ...m, id: ev.id })); break;
                         case "done": patchLast((m) => ({ ...m, pending: false, status: undefined })); break;
                     }
                 }
@@ -193,6 +198,22 @@ export default function ChatThread({ sessionId: initialId }: { sessionId: number
             textRef.current?.focus();
         }
     };
+
+    // Card edits are saved against the reply, so the next question sees them (and a reload
+    // restores them). Debounced per card: typing a number fires one save, not one per key.
+    const editTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+    const saveEdit = useCallback((messageId: number, index: number, calculator: string, inputs: Record<string, any>) => {
+        const key = `${messageId}-${index}`;
+        clearTimeout(editTimers.current.get(key));
+        editTimers.current.set(key, setTimeout(() => {
+            if (!sid) return;
+            fetch(`${API_BASE}/api/sessions/${sid}/messages/${messageId}/tools/${index}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ calculator, inputs }),
+            }).catch(() => { /* the card still works; the copilot just won't see this edit */ });
+        }, 800));
+    }, [sid]);
 
     const exportReport = async () => {
         if (!sid) return;
@@ -287,8 +308,10 @@ export default function ChatThread({ sessionId: initialId }: { sessionId: number
                             {m.role === "assistant" && m.tools.length > 0 && (
                                 <div className="md:pl-11 space-y-4">
                                     {m.tools.map((t, j) => t.calculator && (
-                                        <CalculatorView key={`${i}-${j}`} calculatorId={t.calculator} initial={t.inputs} compact
-                                            provenance={t.provenance} example={t.example} provisional={t.provisional} />
+                                        <CalculatorView key={`${i}-${j}`} calculatorId={t.calculator} compact
+                                            initial={{ ...t.inputs, ...t.edited?.inputs }} editedNames={t.edited?.changed}
+                                            provenance={t.provenance} example={t.example} provisional={t.provisional}
+                                            onEdit={m.id ? (inputs) => saveEdit(m.id!, j, t.calculator!, inputs) : undefined} />
                                     ))}
                                 </div>
                             )}

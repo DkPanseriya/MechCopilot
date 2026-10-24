@@ -13,6 +13,7 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 # --- Pydantic Models ---
 class MessageSchema(BaseModel):
+    id: Optional[int] = None
     role: str
     content: str
     tool_data: Optional[dict] = None
@@ -62,6 +63,7 @@ def get_session(session_id: int, db: Session = Depends(get_db)):
     
     messages = [
         MessageSchema(
+            id=m.id,
             role=m.role, 
             content=m.content, 
             tool_data=m.tool_data
@@ -146,20 +148,52 @@ def chat_in_session(session_id: int, request: ChatRequest, db: Session = Depends
             traceback.print_exc()
             yield sse({"type": "error", "content": f"{type(e).__name__}: {e}"})
 
+        saved_id = None
         if final is not None:
             store = SessionLocal()
             try:
-                store.add(DbMessage(session_id=session_id, role="assistant",
-                                    content=final["content"], tool_data=final["tool_data"]))
+                reply = DbMessage(session_id=session_id, role="assistant",
+                                  content=final["content"], tool_data=final["tool_data"])
+                store.add(reply)
                 if rename:
                     sess = store.query(DbSession).filter(DbSession.id == session_id).first()
                     title = (final.get("title") or request.message).strip()
                     if sess and title:
                         sess.title = title[:60]
                 store.commit()
+                saved_id = reply.id
             finally:
                 store.close()
+        if saved_id is not None:  # lets the client save card edits against this reply
+            yield sse({"type": "saved", "id": saved_id})
         yield sse({"type": "done"})
 
     return StreamingResponse(generate_stream(), media_type="text/event-stream")
 
+
+
+class ToolEdit(BaseModel):
+    calculator: str
+    inputs: dict
+
+
+@router.patch("/{session_id}/messages/{message_id}/tools/{index}")
+def edit_tool(session_id: int, message_id: int, index: int, edit: ToolEdit, db: Session = Depends(get_db)):
+    """Store the inputs a user changed in a calculator card under an assistant reply.
+
+    The calculation is re-run here, so the conversation records the server's verdict for the
+    edited inputs, never one reported by the client."""
+    import copilot
+
+    msg = db.query(DbMessage).filter(DbMessage.id == message_id, DbMessage.session_id == session_id).first()
+    tools = list((msg.tool_data or {}).get("tools") or []) if msg else []
+    if not msg or not 0 <= index < len(tools) or tools[index].get("calculator") != edit.calculator:
+        raise HTTPException(status_code=404, detail="Calculator not found in this message")
+    try:
+        edited = copilot.edit_summary(tools[index], edit.inputs)
+    except copilot.CalcError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    tools[index] = {**tools[index], "edited": edited}
+    msg.tool_data = {**msg.tool_data, "tools": tools}   # new dict so the JSON column is saved
+    db.commit()
+    return edited

@@ -416,6 +416,9 @@ engineering default (load factor, friction, safety factor, reliability, lubricat
 "assumptions" with its value. Do NOT restate material or catalogue properties (strengths, masses, \
 ratings) in assumptions — the library supplies them; just name the material you picked.
 - Follow-ups ("make it 10.9", "what if the load doubles") re-run the earlier calculator with the change.
+- "[user edited …]" in the conversation means the user changed inputs in a calculator card. Those \
+values are the user's now ("source": "user"): a follow-up such as "is it still OK?" re-runs that \
+calculator with every input it showed, the edited ones included.
 - General or comparison questions about standard parts and materials (e.g. "8.8 vs 10.9", "ball vs \
 roller bearing") still run a lookup or calculator for a representative case (e.g. fastener_lookup for \
 each class, bearing_life for each type) so the answer quotes library values, not memory.
@@ -538,14 +541,55 @@ def _profile_line(profile: Optional[Dict[str, Any]]) -> str:
     return f"\nUser: {stage} engineer, focus area {area}. {depth}"
 
 
+def edit_summary(tool: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """Re-run a calculator card with the inputs the user set in it. Returns what the
+    conversation keeps: the inputs, which ones differ from the copilot's run, and the result.
+    Raises CalcError for inputs the calculator rejects."""
+    calc = CATALOG[tool["calculator"]]
+    result = run_calculator(calc, inputs)
+    before, after = coerce_inputs(calc, tool.get("inputs") or {}), coerce_inputs(calc, inputs)
+
+    def same(a: Any, b: Any) -> bool:
+        if isinstance(a, float) and isinstance(b, float):
+            return abs(a - b) <= 1e-9 * max(1.0, abs(a), abs(b))
+        return a == b
+
+    changed = [p.name for p in calc.params if not same(before[p.name], after[p.name])]
+    outputs = [o for o in result["outputs"] if o["primary"]] or result["outputs"][:4]
+    return {"inputs": {n: inputs[n] for n in changed if n in inputs}, "changed": changed,
+            "verdict": result["verdict"],
+            "outputs": {o["label"]: f"{o['display']} {o['unit_label']}".strip() for o in outputs}}
+
+
+def _edit_note(tool: Dict[str, Any]) -> str:
+    """'[user edited Bearing finder: Radial load Fr 3.5 kN → 4.2 kN; verdict now fail]'."""
+    edited = tool.get("edited") or {}
+    if not edited.get("changed"):
+        return ""
+    params = {p.name: p for p in CATALOG[tool["calculator"]].params}
+    changes = []
+    for name in edited["changed"]:
+        p = params.get(name)
+        if p is None or name not in edited["inputs"]:
+            continue
+        old = tool.get("inputs", {}).get(name, p.default)
+        changes.append(f"{p.label} {_shown(p, old)} → {_shown(p, edited['inputs'][name])}")
+    outs = ", ".join(f"{k} {v}" for k, v in (edited.get("outputs") or {}).items())
+    return (f"\n[user edited {tool.get('title') or tool['calculator']}: {'; '.join(changes)}; "
+            f"verdict now {edited.get('verdict')}" + (f"; {outs}" if outs else "") + "]")
+
+
 def _given_inputs(tool: Dict[str, Any]) -> str:
     """A shown calculator with the inputs the user gave or the planner assumed. Derived and
     default inputs are left out: they are recomputed, and repeating them would turn demo
-    values into "given" ones on the next turn. Old sessions without provenance list all."""
+    values into "given" ones on the next turn. Old sessions without provenance list all.
+    Inputs the user changed in the card replace the copilot's values."""
     prov = tool.get("provenance")
+    edited = (tool.get("edited") or {}).get("inputs") or {}
+    merged = {**(tool.get("inputs") or {}), **edited}
     parts = []
-    for name, val in (tool.get("inputs") or {}).items():
-        src = (prov or {}).get(name, {}).get("source", "assumed")
+    for name, val in merged.items():
+        src = "user" if name in edited else (prov or {}).get(name, {}).get("source", "assumed")
         if prov is not None and src not in ("user", "assumed"):
             continue
         if isinstance(val, dict) and "value" in val:
@@ -553,7 +597,8 @@ def _given_inputs(tool: Dict[str, Any]) -> str:
             shown = (f"{num:g}" if isinstance(num, (int, float)) else str(num)) + f" {val.get('unit') or ''}"
         else:
             shown = str(val)
-        parts.append(f"{name}={shown.strip()}" + (" (assumed)" if prov is not None and src == "assumed" else ""))
+        note = " (edited in card)" if name in edited else (" (assumed)" if prov is not None and src == "assumed" else "")
+        parts.append(f"{name}={shown.strip()}{note}")
     return f"{tool.get('calculator')}({', '.join(parts)})" + (" [example values]" if tool.get("example") else "")
 
 
@@ -571,6 +616,7 @@ def _history_text(history: List[Dict[str, Any]], limit: int = 12) -> str:
             used = "; ".join(_given_inputs(t)[:600] for t in tools if t.get("type") == "calc")
             if used:
                 content += f"\n[calculators shown: {used}]"
+            content += "".join(_edit_note(t) for t in tools if t.get("type") == "calc" and t.get("calculator") in CATALOG)
         if len(content) > 2500:
             content = content[:2500] + " …"
         out.append(f"{role}: {content}")

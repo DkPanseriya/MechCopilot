@@ -151,6 +151,26 @@ CASES = [
         "expect": {"calculators_any": ["bearing_selector"], "finds_passing_design": True},
     },
     {
+        "id": "card_edit_still_ok",
+        # The user raised the radial load from 3.5 to 9 kN in the bearing card (the server re-ran it:
+        # no 30 mm deep groove ball bearing passes). The follow-up must use 9 kN, not the original 3.5.
+        "question": "I changed the load in the card. Is it still OK?",
+        "history": [
+            {"role": "user", "content": "Deep groove ball bearing for a 30 mm shaft, 3.5 kN radial, 1450 rpm."},
+            {"role": "assistant", "content": "**Use a 6206-2RSH.**", "tool_data": {"tools": [{
+                "type": "calc", "calculator": "bearing_selector", "title": "Bearing finder",
+                "inputs": {"Fr": {"value": 3.5, "unit": "kN"}, "Fa": {"value": 0.0, "unit": "kN"},
+                           "n": {"value": 1450.0, "unit": "rpm"}, "bore_min": {"value": 30.0, "unit": "mm"},
+                           "bore_max": {"value": 30.0, "unit": "mm"}},
+                "provenance": {"Fr": {"source": "user"}, "Fa": {"source": "derived"}, "n": {"source": "user"},
+                               "bore_min": {"source": "user"}, "bore_max": {"source": "user"}},
+                "edited": {"inputs": {"Fr": {"value": 9, "unit": "kN"}}, "changed": ["Fr"], "verdict": "fail",
+                           "outputs": {"Recommended bearing": "none found"}}}]}},
+        ],
+        "expect": {"calculators_any": ["bearing_selector", "bearing_life"],
+                   "must_mention_any": ["9 kN", "9.0 kN", "9000 N"], "format": False},
+    },
+    {
         "id": "price_out_of_scope",
         "question": "How much does an SKF 6206-2RSH cost?",
         "expect": {"must_not_mention": ["$", "€", "USD", "EUR", "₹"],
