@@ -42,6 +42,9 @@ def read_settings() -> Dict:
 def write_env(updates: Dict[str, Optional[str]]) -> None:
     """Set (value) or remove (None) variables in the .env file and in this process,
     keeping every other line of the file as it was."""
+    for k, v in updates.items():
+        if v is not None and ("\n" in v or "\r" in v):
+            raise ValueError(f"{k}: a value cannot contain a line break")
     path = env_path()
     lines = []
     if os.path.exists(path):
@@ -117,5 +120,8 @@ def save_settings(update: SettingsUpdate):
         if role in MODEL_VARS:
             model = model.strip()
             changes[MODEL_VARS[role]] = None if not model or model == MODEL_DEFAULTS[role] else model
-    write_env(changes)
+    try:
+        write_env(changes)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     return {**read_settings(), "verified": verified}

@@ -291,3 +291,21 @@ def test_missing_key_inputs_ask_instead_of_computing(monkeypatch):
     assert final["tool_data"]["clarify"]["questions"] and final["tool_data"]["tools"] == []
     assert "[asked the user: Radial load; Bearing type]" in copilot._history_text(
         [{"role": "assistant", "content": final["content"], "tool_data": final["tool_data"]}])
+
+
+def test_results_for_review_stays_valid_json():
+    import json
+    from copilot import results_for_review
+    big = [{"calculator": f"c{i}", "outputs": {"x": "1 mm"}, "tables": ["t" * 3000]} for i in range(30)]
+    lean = json.loads(results_for_review(big, limit=4000))          # detail dropped first
+    assert len(lean) == 30 and all("tables" not in s for s in lean)
+    many = [{"calculator": f"c{i}", "outputs": {f"o{k}": "1 mm" for k in range(20)}} for i in range(30)]
+    text = results_for_review(many, limit=4000)                      # then whole results, said so
+    assert len(text) <= 4000 and "omitted" in json.loads(text)[-1]
+
+
+def test_ungrounded_numbers_flags_only_invented_values():
+    from copilot import ungrounded_numbers
+    summary = [{"calculator": "bolt", "outputs": {"Preload": "29.6 kN"}}]
+    answer = "**Use M10 8.8.** Preload 29.6 kN, tightening torque 48.5 N·m."
+    assert ungrounded_numbers(answer, "M10 bolt, 8.8", [], summary, [], []) == ["48.5"]

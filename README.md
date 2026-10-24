@@ -10,6 +10,9 @@ Every answer comes with **interactive calculators**: an annotated diagram, live 
 switching, results, safety checks, plots and the full worked solution with formulas and the
 standard it follows. Change any input and everything recalculates.
 
+The calculators are free and work offline, with no account. The AI copilot uses your own Replicate or
+OpenAI key, paid per question. Windows installer (x64), or run from source on Windows, macOS or Linux.
+
 ![Bolted joint calculator with VDI 2230 checks and joint diagram](docs/img/bolted_joint.png)
 
 | | |
@@ -18,6 +21,8 @@ standard it follows. Change any input and everything recalculates.
 | Beam analysis (FEM) — any supports and loads | Bearing finder — ISO 281 life, SKF part numbers and links |
 | ![Shaft fatigue with Goodman diagram](docs/img/shaft_fatigue.png) | ![Bolt selector](docs/img/fastener_selector.png) |
 | Shaft fatigue — DE-Goodman, Gerber, ASME, Soderberg | Which bolt? — size, class, length, torque |
+| ![ISO 286 limits and fits](docs/img/iso_fits.png) | ![Bolt group under eccentric shear](docs/img/bolt_group_eccentric.png) |
+| ISO 286 limits & fits — deviations and common fits | Eccentric bolt group — force per bolt, critical bolt |
 
 ## What's inside
 
@@ -35,7 +40,11 @@ standard it follows. Change any input and everything recalculates.
 full list with inputs and references is in [docs/CALCULATORS.md](docs/CALCULATORS.md). Every
 calculator also opens directly from the **Calculator Library**, no chat needed.
 
+<p align="center"><img src="docs/img/library.png" width="70%" alt="The Calculator Library"></p>
+
 ## Install (Windows)
+
+No release has been published yet; until the first one, use [Run from source](#run-from-source).
 
 1. Download **`MechCopilot-Setup-<version>.exe`** from the
    [latest release](https://github.com/DkPanseriya/MechCopilot/releases/latest).

@@ -140,6 +140,8 @@ def hole_deviations(size: float, letter: str, grade: int) -> Tuple[float, float]
     if letter == "M":
         base = -shaft_ei_fundamental(size, "m", grade)
         ES = base + _delta(size, grade) if grade <= 8 else base
+        if grade == 6 and 250 < size <= 315:  # ISO 286-2 special case for M6
+            ES = -9.0
         return ES, ES - it
     if letter == "N":
         base = -shaft_ei_fundamental(size, "n", grade)

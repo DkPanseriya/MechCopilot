@@ -164,3 +164,11 @@ def test_importer_rejects_bad_rows():
     with pytest.raises(ImportError_):
         validate_rows([{"designation": "X", "type": "trb", "d": "20", "D": "47", "B": "15",
                         "C": "30", "C0": "30", "Pu": "3", "n_ref": "9000", "n_lim": "11000"}])
+
+
+def test_a1_matches_iso281_formula_at_high_reliability():
+    # ISO 281:2007 Table 12 and a1 = 0.95 (ln(100/R) / ln(100/90))^(2/3) + 0.05
+    for r in ("99.9", "99.95"):
+        R = float(r)
+        formula = 0.95 * (math.log(100 / R) / math.log(100 / 90)) ** (2 / 3) + 0.05
+        assert theory.A1[r] == pytest.approx(formula, abs=0.001)
