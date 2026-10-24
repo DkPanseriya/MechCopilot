@@ -263,7 +263,77 @@ const SpurGear: DiagramComponent = ({ params }) => {
     );
 };
 
+// ---------------------------------------------------------------------------
+// Drive loads: the element on the shaft and the forces it applies
+// ---------------------------------------------------------------------------
+const DriveLoads: DiagramComponent = ({ params }) => {
+    const id = useSvgId();
+    const el = String(params.element ?? "chain");
+    const cx = 190, cy = 135, r = 78;
+    const gear = el === "spur" || el === "helical";
+    const flexible = el === "chain" || el === "v_belt" || el === "flat_belt" || el === "timing_belt";
+    // Belt strands converge on a smaller wheel when the wrap is under 180°.
+    const half = el === "v_belt" || el === "flat_belt" ? (Math.PI - (num(params.theta, 180) * Math.PI) / 180) / 2 : 0;
+    const strand = (top: boolean) => {
+        const phi = top ? half : -half;
+        const tx = cx + r * Math.cos(phi + (top ? -Math.PI / 2 : Math.PI / 2));
+        const ty = cy + r * Math.sin(phi + (top ? -Math.PI / 2 : Math.PI / 2));
+        return { x1: tx, y1: ty, x2: tx + 250 * Math.cos(phi), y2: ty + 250 * Math.sin(phi) };
+    };
+    const slackLabel = el === "chain" ? "slack" : el === "timing_belt" ? "slack (installation tension)" : `F2 ${params.F2 ?? ""}`;
+    const tightLabel = el === "chain" ? `chain pull ${params.Ft ?? ""}` : el === "timing_belt" ? `tight ${params.Ft ?? ""}` : `F1 ${params.F1 ?? ""}`;
+    const top = strand(true), bot = strand(false);
+
+    return (
+        <DiagramSvg w={560} h={270} label="Drive element on a shaft and the forces it applies" id={id}>
+            {el === "coupling" ? (
+                <>
+                    <rect x={cx - 70} y={cy - 40} width={60} height={80} rx={6} className={BODY} strokeWidth={1.4} />
+                    <rect x={cx + 10} y={cy - 40} width={60} height={80} rx={6} className={BODY_DARK} strokeWidth={1.4} />
+                    <line x1={cx - 150} y1={cy} x2={cx + 150} y2={cy} stroke="currentColor" strokeDasharray="8 4" strokeWidth={0.8} className="text-muted-foreground" />
+                    <Tag x={cx} y={cy + 66} anchor="middle" text="Coupling: torque only, no shaft load" />
+                </>
+            ) : (
+                <>
+                    {flexible && (
+                        <>
+                            <line {...top} stroke="currentColor" strokeWidth={el === "chain" ? 3 : 4} className="text-foreground/70" />
+                            <line {...bot} stroke="currentColor" strokeWidth={el === "chain" ? 3 : 4}
+                                strokeDasharray={el === "chain" ? "6 4" : undefined} className="text-foreground/40" />
+                            <Tag x={top.x2 - 150} y={top.y1 + (top.y2 - top.y1) * 0.4 - 10} text={tightLabel} tone="load" />
+                            <Tag x={bot.x2 - 150} y={bot.y1 + (bot.y2 - bot.y1) * 0.4 + 20} text={slackLabel} />
+                        </>
+                    )}
+                    {gear && (
+                        <circle cx={cx + r + 52} cy={cy} r={52} fill="none" stroke="currentColor" strokeDasharray="5 4" strokeWidth={1} className="text-muted-foreground" />
+                    )}
+                    <circle cx={cx} cy={cy} r={r} className={BODY} strokeWidth={el === "chain" || gear ? 1 : 1.6}
+                        strokeDasharray={el === "chain" || gear ? "4 3" : undefined} />
+                    <circle cx={cx} cy={cy} r={16} className={BODY_DARK} strokeWidth={1.4} />
+                    <Dim x1={cx - r} y1={cy + r + 34} x2={cx + r} y2={cy + r + 34} label={`D ${params.D ?? ""}`} id={id} />
+                    {gear && (
+                        <>
+                            <Arrow x1={cx + r} y1={cy - 70} x2={cx + r} y2={cy - 3} label={`Ft ${params.Ft ?? ""}`} id={id} dx={6} dy={4} />
+                            <Arrow x1={cx + r + 80} y1={cy} x2={cx + r + 3} y2={cy} label={`Fr ${params.Fr ?? ""}`} id={id} color="text-amber-500" dx={-20} dy={18} />
+                            {params.Fa && <Tag x={cx + r + 10} y={cy + 70} text={`Fa ${params.Fa} (axial)`} tone="moment" />}
+                        </>
+                    )}
+                    {/* the strands pull the shaft towards them; a gear's resultant depends on the mesh side */}
+                    {flexible && params.Fs && (
+                        <Arrow x1={cx - 170} y1={cy} x2={cx - 18} y2={cy}
+                            label={`Fs ${params.Fs} on shaft`} id={id} color="text-violet-500" dx={0} dy={-10} />
+                    )}
+                    {gear && params.Fs && <Tag x={16} y={44} text={`Resultant on shaft Fs ${params.Fs}`} tone="load" />}
+                </>
+            )}
+            <MomentArrow cx={cx} cy={cy} r={26} label="" id={id} color="text-violet-500" />
+            <Tag x={16} y={24} text={`T ${params.T ?? ""}`} tone="moment" />
+        </DiagramSvg>
+    );
+};
+
 export const DIAGRAMS: Record<string, DiagramComponent> = {
+    drive_loads: DriveLoads,
     shaft_fatigue: ShaftFatigue,
     shaft_critical_speed: ShaftCriticalSpeed,
     parallel_key: ParallelKey,

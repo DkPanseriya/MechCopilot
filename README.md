@@ -26,11 +26,11 @@ standard it follows. Change any input and everything recalculates.
 | **Fasteners** | Bolt/nut/hole dimensions, preload & tightening torque (VDI 2230), bolted joint with joint diagram, slip-critical shear joints, thread engagement, eccentric bolt groups, bolt selector |
 | **Bearings** | ISO 281 rating life incl. modified life (a<sub>ISO</sub>), bearing selector with SKF designations and links, required dynamic load rating |
 | **Beams** | Beam analysis (FEM: any supports, point/distributed loads, moments) with shear, moment and deflection diagrams; section properties; standard profile selector (IPE, HEA, HEB, UPN, RHS, CHS) |
-| **Shafts, keys & fits** | Shaft fatigue sizing (DE-Goodman/Gerber/ASME), critical speed, parallel keys (DIN 6885), ISO 286 limits & fits, interference fits (Lamé) |
+| **Shafts, keys & fits** | Drive loads (torque from power, chain, belt and gear forces on the shaft), shaft fatigue sizing (DE-Goodman/Gerber/ASME), critical speed, parallel keys (DIN 6885), ISO 286 limits & fits, interference fits (Lamé) |
 | **Gears, springs, welds** | Spur gear bending & contact, compression and torsion springs, fillet weld groups (AWS / EN 1993-1-8) |
 | **Structures & fatigue** | Column buckling (Euler/Johnson), pressure vessels (thin and Lamé), fatigue life with S–N and Haigh diagrams, stress concentration factors, combined loading on round bars |
 
-**27 calculators**, a database of **285 standard bearings** and full ISO metric fastener tables
+**28 calculators**, a database of **285 standard bearings** and full ISO metric fastener tables
 (M2–M48, fine pitches, property classes 4.6–12.9 and A2/A4, heads, nuts, washers, holes). The
 full list with inputs and references is in [docs/CALCULATORS.md](docs/CALCULATORS.md). Every
 calculator also opens directly from the **Calculator Library**, no chat needed.
@@ -108,7 +108,7 @@ well under one cent, at some cost in judgement.
 The language model **never does the arithmetic** and never writes code that runs in your browser.
 It only chooses from a fixed library of calculators and explains their results; the answer may
 only quote numbers that the calculators produced or that you gave. Every number you see comes
-from a tested formula: 325 automated tests check the calculators against textbook and
+from a tested formula: 390+ automated tests check the calculators against textbook and
 standard worked examples (Shigley, VDI 2230, ISO 281, ISO 286, closed-form beam cases) and verify
 that every calculator runs cleanly on its defaults and presets.
 

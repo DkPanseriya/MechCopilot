@@ -495,6 +495,8 @@ DESIGN_HINTS: Dict[str, str] = {
                         "exceed the basic L10h.",
     "bearing_life": "Life short → heavier series, roller bearing, cleaner lubrication (raises aISO) or larger bore.",
     "bearing_required_c": "Use the required C to pick the smallest bearing per series that meets it.",
+    "drive_loads": "Feed the resultant shaft load into beam_analysis (reactions) and the bending moment at "
+                   "the bearing seat into shaft_fatigue; the torque into parallel_key or interference_fit.",
     "shaft_fatigue": "Fatigue fails → next standard diameter up, larger fillet radius (lower Kf), better "
                      "surface finish or stronger material; first-cycle yield fails → larger diameter.",
     "round_bar_combined": "Fails → larger diameter or stronger material.",
@@ -968,6 +970,8 @@ _OFFLINE_RULES: List[Tuple[Tuple[str, ...], str]] = [
     (("profile", "ipe", "hea", "heb", "i-beam", "which beam"), "beam_profile_selector"),
     (("section propert", "moment of inertia", "section modulus", "second moment"), "section_properties"),
     (("beam", "span", "cantilever", "simply supported", "deflection", "girder", "joist"), "beam_analysis"),
+    (("chain pull", "belt tension", "gear force", "sprocket", "pulley", "kw at", "power to torque",
+      "torque from power"), "drive_loads"),
     (("critical speed", "whirl"), "shaft_critical_speed"),
     (("combined", "von mises", "bending and torsion"), "round_bar_combined"),
     (("shaft",), "shaft_fatigue"),
