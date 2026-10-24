@@ -8,22 +8,40 @@ def _fmt_input(v: Any) -> str:
     return str(v)
 
 
+SOURCE_LABEL = {"user": "given", "assumed": "assumed", "derived": "derived"}
+
+
+def _source(meta: Dict[str, Any]) -> str:
+    label = SOURCE_LABEL.get(meta.get("source"), "")
+    return f"{label}: {meta['why']}" if label and meta.get("why") else label
+
+
 def _calc_sections(tool_data: Dict[str, Any]) -> List[str]:
     md: List[str] = []
-    results = {r.get("calculator"): r for r in tool_data.get("results", [])}
-    for tool in tool_data.get("tools", []):
+    # Results are stored in the same order as the tools (one calculator may run twice).
+    results = tool_data.get("results", [])
+    for i, tool in enumerate(tool_data.get("tools", [])):
         if tool.get("type") != "calc":
             continue
         md.append(f"### {tool.get('title', tool.get('calculator'))}")
         if tool.get("purpose"):
             md.append(f"_{tool['purpose']}_")
+        if tool.get("example"):
+            md.append("\n> Example: run on the calculator's default values to illustrate, not a design check.")
+        if tool.get("provisional"):
+            md.append(f"\n> Provisional: calculator defaults used for {', '.join(f'`{n}`' for n in tool['provisional'])}"
+                      " — confirm these before relying on the result.")
+        prov = tool.get("provenance") or {}
         if tool.get("inputs"):
             md.append("")
-            md.append("| Input | Value |")
-            md.append("| :--- | :--- |")
+            md.append("| Input | Value | Source |")
+            md.append("| :--- | :--- | :--- |")
             for k, v in tool["inputs"].items():
-                md.append(f"| `{k}` | {_fmt_input(v)} |")
-        res = results.get(tool.get("calculator"))
+                md.append(f"| `{k}` | {_fmt_input(v)} | {_source(prov.get(k, {}))} |")
+        defaults = [k for k, meta in prov.items() if meta.get("source") == "default"]
+        if defaults:
+            md.append(f"\nCalculator defaults used for: {', '.join(f'`{k}`' for k in defaults)}.")
+        res = results[i] if i < len(results) else None
         if res and "error" in res:
             md.append(f"\n> Calculation error: {res['error']}")
         elif res:

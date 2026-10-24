@@ -155,6 +155,8 @@ def _compute_fillet(x: Dict[str, Any]) -> Dict[str, Any]:
 
 FILLET_WELD = Calculator(
     id="fillet_weld",
+    governing=["V", "N", "e", "pattern", "d", "b"],
+    trial=["h"],
     title="Fillet weld group",
     category="Welds",
     summary="Shear in a fillet-welded joint under direct, torsional or bending load — throat stress, utilisation and required leg size.",

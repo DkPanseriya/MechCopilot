@@ -22,7 +22,8 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import pint
 
-from engineering.core import CalcError, UNIT_CHOICES, run_calculator, to_canonical, ureg
+from engineering.core import (CalcError, UNIT_CHOICES, coerce_inputs, derived_inputs, is_visible,
+                              run_calculator, to_canonical, unit_label, ureg)
 from engineering.registry import CATALOG, ordered
 
 
@@ -355,7 +356,10 @@ Reply with ONE JSON object and nothing else:
   "title": "3-6 word session title",
   "intent": "sizing | check | selection | explain | lookup | general",
   "tools": [
-    {"calculator": "<id from catalog>", "inputs": {"<param>": <value>}, "purpose": "<why, one line>"}
+    {"calculator": "<id from catalog>",
+     "inputs": {"<param>": {"value": <value>, "unit": "<unit, numbers only>", "source": "user" | "assumed",
+                            "why": "<assumed only: one line>"}},
+     "purpose": "<why, one line>"}
   ],
   "assumptions": ["<each engineering assumption you made, with the value>"],
   "missing": ["<critical information the user did not give, if any>"],
@@ -388,10 +392,20 @@ add a second calculator that repeats them. Shaft fatigue already applies notch f
 a separate stress-concentration run unless the user asks about the notch itself.
 - Never guess a part size, designation or geometry for one calculator that depends on another \
 calculator's result in the same plan. A follow-up step can verify the chosen part afterwards.
-- Concept explanations: pick the one calculator whose diagram and worked solution show the concept.
-- Numbers are in the unit shown in brackets, e.g. "F": 12 means 12 in the listed unit. To use \
-another unit write {"value": 12, "unit": "kN"} (pint unit strings: mm, m, N, kN, MPa, GPa, N*m, rpm...).
-- Select params take one of the listed option values exactly.
+- Concept explanations: intent "explain", pick the one calculator whose diagram and worked solution \
+show the concept. It runs on example values; do not invent a design for the user.
+- Every input says where it came from. "source": "user" = the value is in the conversation; write it \
+exactly as given, in its unit. "source": "assumed" = you chose it; give "why" in a few words. Never \
+mark a value "user" that the user did not give.
+- Set every value that decides the result: loads, speeds, spans, lengths, positions, support or end \
+conditions, the size or part being checked. A param you leave out runs at the calculator's demo \
+default, and the server asks the user for any deciding value you left out, so never leave out a \
+value the user gave.
+- When the user says to use typical values or to go ahead, set the deciding values yourself as \
+"assumed" with "why".
+- "unit" is the unit of the value (pint strings: mm, m, N, kN, MPa, GPa, N*m, rpm, bar, inch, lbf…); \
+omit it to mean the unit shown in brackets in the catalog.
+- Select params take one of the listed option values exactly: {"value": "<option>", "source": …}.
 - A param marked "(only if X=Y)" is ignored unless X=Y. When the user gives a number that a preset \
 select would otherwise override (e.g. a required life vs an application class), set that select to \
 its custom option so the user's number is used.
@@ -416,7 +430,9 @@ STEP: FOLLOW-UP. The first calculations are done (results below). If a check fai
 found nothing, or the chosen part should be verified in detail, you may run up to 2 MORE \
 calculators to reach a design that passes — e.g. another bearing type or a heavier series, a \
 smaller interference fit, the next standard shaft size, the selected bolt checked in the bolted-joint \
-calculator. Use the parts and numbers the results produced. Reply with ONE JSON object:
+calculator. Use the parts and numbers the results produced. Inputs you leave out are copied from \
+the earlier run of the same calculator, so set only what changes (plus everything for a calculator \
+that has not run yet). Reply with ONE JSON object:
 {"tools": [ {"calculator": "<id>", "inputs": {...}, "purpose": "<why>"} ], "reason": "<one line>"}
 Reply {"tools": []} if more calculations would not change the recommendation."""
 
@@ -449,6 +465,19 @@ that would quantify it. Quote a number only if it is a standard value you are ce
 - Getting the direction of an effect wrong is worse than saying nothing: e.g. interference-fit \
 stresses depend on the interference, not on press vs shrink assembly.
 - If a calculator errored or information is missing, say exactly what is needed.
+
+INPUTS (each result lists where its inputs came from)
+- "inputs" were given by the user; "assumed" were chosen when planning, with the reason; \
+"defaults_used" are calculator defaults nobody set.
+- A result with "example": true ran on default values only to illustrate. Introduce its numbers as an \
+example ("Example with the default values: …") and never describe them as the user's design, part \
+or problem.
+- A result with "provisional" used a default for a value that sets the answer (listed there). Say so \
+in the first line ("Provisional — speed not given, 1500 rpm used") and ask for that value under \
+"Assumptions to confirm".
+- A default in "defaults_used" that would change the verdict goes under "Assumptions to confirm".
+- "trial_size" inputs are trial values: report the calculator's required size as the answer, not \
+the trial value's verdict.
 Voice: an experienced engineer talking to a colleague — direct, no filler, no restating the question."""
 
 WORD_LIMIT = {"efficient": 170, "deep": 320}
@@ -509,6 +538,25 @@ def _profile_line(profile: Optional[Dict[str, Any]]) -> str:
     return f"\nUser: {stage} engineer, focus area {area}. {depth}"
 
 
+def _given_inputs(tool: Dict[str, Any]) -> str:
+    """A shown calculator with the inputs the user gave or the planner assumed. Derived and
+    default inputs are left out: they are recomputed, and repeating them would turn demo
+    values into "given" ones on the next turn. Old sessions without provenance list all."""
+    prov = tool.get("provenance")
+    parts = []
+    for name, val in (tool.get("inputs") or {}).items():
+        src = (prov or {}).get(name, {}).get("source", "assumed")
+        if prov is not None and src not in ("user", "assumed"):
+            continue
+        if isinstance(val, dict) and "value" in val:
+            num = val["value"]
+            shown = (f"{num:g}" if isinstance(num, (int, float)) else str(num)) + f" {val.get('unit') or ''}"
+        else:
+            shown = str(val)
+        parts.append(f"{name}={shown.strip()}" + (" (assumed)" if prov is not None and src == "assumed" else ""))
+    return f"{tool.get('calculator')}({', '.join(parts)})" + (" [example values]" if tool.get("example") else "")
+
+
 def _history_text(history: List[Dict[str, Any]], limit: int = 12) -> str:
     out = []
     for m in history[-limit:]:
@@ -520,8 +568,7 @@ def _history_text(history: List[Dict[str, Any]], limit: int = 12) -> str:
         if asked:
             content += "\n[asked the user: " + "; ".join(q["label"] for q in asked) + "]"
         if tools:
-            used = "; ".join(f"{t.get('calculator')}({json.dumps(t.get('inputs', {}))[:300]})"
-                             for t in tools if t.get("type") == "calc")
+            used = "; ".join(_given_inputs(t)[:600] for t in tools if t.get("type") == "calc")
             if used:
                 content += f"\n[calculators shown: {used}]"
         if len(content) > 2500:
@@ -537,17 +584,39 @@ def _history_text(history: List[Dict[str, Any]], limit: int = 12) -> str:
 _NUM_UNIT = re.compile(r"^\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*([^\d\s].*)?$")
 
 
-def _clean_inputs(calc_id: str, raw: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
-    """Keep only valid params; normalise values into the frontend/backend input format."""
+PLAN_SOURCES = ("user", "assumed")
+
+
+def _split_source(val: Any) -> Tuple[Any, Dict[str, str]]:
+    """A planner value may carry its provenance: {"value", "unit"?, "source", "why"?}.
+    Values without one (older plans, plain numbers) count as assumed."""
+    meta = {"source": "assumed"}
+    if isinstance(val, dict) and ("source" in val or "why" in val):
+        src = str(val.get("source") or "").strip().lower()
+        meta["source"] = src if src in PLAN_SOURCES else "assumed"
+        if str(val.get("why") or "").strip():
+            meta["why"] = str(val["why"]).strip()[:120]
+        val = {k: v for k, v in val.items() if k in ("value", "unit")}
+    return val, meta
+
+
+def _clean_inputs(calc_id: str, raw: Dict[str, Any]
+                  ) -> Tuple[Dict[str, Any], List[str], Dict[str, Dict[str, str]]]:
+    """Keep only valid params; normalise values into the frontend/backend input format.
+    Returns (inputs, dropped param names, provenance of each kept input)."""
     calc = CATALOG[calc_id]
     params = {p.name: p for p in calc.params}
     cleaned: Dict[str, Any] = {}
     dropped: List[str] = []
+    sources: Dict[str, Dict[str, str]] = {}
     for name, val in (raw or {}).items():
         p = params.get(name)
         if p is None:
             dropped.append(name)
             continue
+        val, meta = _split_source(val)
+        if p.kind != "number" and isinstance(val, dict):
+            val = val.get("value")
         try:
             if p.kind == "number":
                 default_unit = p.to_dict()["unit"]
@@ -581,9 +650,10 @@ def _clean_inputs(calc_id: str, raw: Dict[str, Any]) -> Tuple[Dict[str, Any], Li
                 cleaned[name] = val in (True, "true", "True", 1, "yes")
             else:
                 cleaned[name] = str(val)
+            sources[name] = meta
         except (ValueError, TypeError, pint.errors.PintError):
             dropped.append(name)
-    return cleaned, dropped
+    return cleaned, dropped, sources
 
 
 def clean_clarify(plan: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -640,18 +710,39 @@ LOAD_SETS: Dict[str, Tuple[str, ...]] = {
 }
 
 
-def _zero_unset_loads(calc_id: str, inputs: Dict[str, Any]) -> None:
+def _zero_unset_loads(calc_id: str, inputs: Dict[str, Any]) -> List[str]:
+    """Zero the loads of a load set the plan left out; returns the names it zeroed."""
     names = LOAD_SETS.get(calc_id, ())
     if not any(n in inputs for n in names):
-        return                                  # nothing set: keep the demo case intact
+        return []                               # nothing set: keep the demo case intact
     params = {p.name: p for p in CATALOG[calc_id].params}
-    for n in names:
-        if n not in inputs:
-            inputs[n] = {"value": 0.0, "unit": params[n].to_dict()["unit"]}
+    zeroed = [n for n in names if n not in inputs]
+    for n in zeroed:
+        inputs[n] = {"value": 0.0, "unit": params[n].to_dict()["unit"]}
+    return zeroed
+
+
+def _provenance(calc_id: str, inputs: Dict[str, Any],
+                sources: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, str]]:
+    """Source of every visible input: user | assumed | derived | default."""
+    calc = CATALOG[calc_id]
+    try:
+        values = coerce_inputs(calc, inputs)
+    except CalcError:
+        values = {}
+    return {p.name: sources.get(p.name, {"source": "default"})
+            for p in calc.params if not values or is_visible(p, values)}
+
+
+def missing_governing(tool: Dict[str, Any]) -> List[str]:
+    """Governing inputs of a run that are still at the calculator's demo default."""
+    prov = tool.get("provenance") or {}
+    return [n for n in CATALOG[tool["calculator"]].governing
+            if prov.get(n, {}).get("source") == "default"]
 
 
 def normalise_tools(plan: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """Validate the model's tool list against the catalog."""
+    """Validate the model's tool list against the catalog and record where every input came from."""
     tools, notes = [], []
     seen = set()
     for t in (plan.get("tools") or [])[:4]:
@@ -659,17 +750,103 @@ def normalise_tools(plan: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[st
         if cid not in CATALOG:
             notes.append(f"Skipped unknown calculator '{cid}'.")
             continue
-        inputs, dropped = _clean_inputs(cid, t.get("inputs") or {})
-        _zero_unset_loads(cid, inputs)
+        inputs, dropped, sources = _clean_inputs(cid, t.get("inputs") or {})
+        for n in _zero_unset_loads(cid, inputs):
+            sources[n] = {"source": "derived", "why": "load not described, taken as zero"}
+        for n, (value, why) in derived_inputs(CATALOG[cid], inputs).items():
+            inputs[n] = value
+            sources[n] = {"source": "derived", "why": why}
         key = (cid, json.dumps(inputs, sort_keys=True))
         if key in seen:
             continue
         seen.add(key)
         if dropped:
             notes.append(f"{CATALOG[cid].title}: ignored unrecognised inputs {', '.join(dropped)}.")
-        tools.append({"type": "calc", "calculator": cid, "title": CATALOG[cid].title,
-                      "inputs": inputs, "purpose": str(t.get("purpose") or "")[:200]})
+        tool = {"type": "calc", "calculator": cid, "title": CATALOG[cid].title,
+                "inputs": inputs, "purpose": str(t.get("purpose") or "")[:200],
+                "provenance": _provenance(cid, inputs, sources)}
+        tool["missing"] = missing_governing(tool)
+        tools.append(tool)
     return tools, notes
+
+
+def _plain_label(label: str) -> str:
+    """'Radial load Fr' -> 'Radial load', 'Point load P1 (down +)' -> 'Point load'."""
+    label = re.sub(r"\s*\([^)]*\)", "", label).strip()
+    head, _, last = label.rpartition(" ")
+    if head and (len(last) == 1 or re.search(r"[α-ωΑ-Ω]", last)
+                 or (len(last) <= 3 and re.search(r"[A-Z0-9]", last))):
+        return head
+    return label
+
+
+def clarify_for_missing(tools: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Questions for the governing inputs the plan left at their demo defaults."""
+    questions, labels = [], set()
+    for t in tools:
+        params = {p.name: p for p in CATALOG[t["calculator"]].params}
+        for name in t["missing"]:
+            p = params[name]
+            label = _plain_label(p.label)
+            if label.lower() in labels:
+                continue
+            labels.add(label.lower())
+            q = {"id": re.sub(r"\W+", "_", name)[:32], "label": label, "unit": "", "options": [],
+                 "placeholder": ""}
+            if p.kind == "number":
+                q["unit"] = unit_label(p.to_dict()["unit"])
+            elif p.kind == "select" and len(p.options or []) <= 8:
+                q["options"] = [str(o["label"])[:60] for o in p.options or []]
+            elif p.kind == "select":
+                q["placeholder"] = next((str(o["label"]) for o in p.options or [] if o["value"] == p.default), "")
+            questions.append(q)
+    titles = " and ".join(dict.fromkeys(t["title"] for t in tools))
+    return {"message": f"To run the {titles} I need these values first. They decide the result, "
+                       "so I won't assume them.",
+            "questions": questions[:5]}
+
+
+_GO_AHEAD = re.compile(r"\b(typical values?|assume|go ahead|use (?:the )?defaults?|your call|"
+                       r"whatever you think|(?:do not|don't|dont) know|not sure)\b", re.I)
+
+
+def _go_ahead(message: str, history: List[Dict[str, Any]]) -> bool:
+    """The user lets the copilot fill gaps itself, or was just asked (never ask twice in a row)."""
+    if _GO_AHEAD.search(message):
+        return True
+    last = history[-1] if history else None
+    return bool(last and last.get("role") == "assistant" and isinstance(last.get("tool_data"), dict)
+                and last["tool_data"].get("clarify"))
+
+
+def _inherit_inputs(follow: Dict[str, Any], earlier: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """A follow-up run of an already-run calculator keeps the inputs the user gave or the
+    planner assumed for it, unless the follow-up changes them."""
+    base = next((t for t in earlier if t["calculator"] == str(follow.get("calculator") or "")), None)
+    if base is None:
+        return follow
+    inherited = {}
+    for name, val in base["inputs"].items():
+        meta = (base.get("provenance") or {}).get(name, {})
+        if meta.get("source") in PLAN_SOURCES:
+            v = dict(val) if isinstance(val, dict) else {"value": val}
+            inherited[name] = {**v, **meta}
+    return {**follow, "inputs": {**inherited, **(follow.get("inputs") or {})}}
+
+
+def _mark_or_block(tools: List[Dict[str, Any]], example_ok: bool, go_ahead: bool) -> List[Dict[str, Any]]:
+    """Label runs that miss governing inputs; return the ones that cannot run yet."""
+    blocked = []
+    for t in tools:
+        if not t["missing"]:
+            continue
+        if example_ok:
+            t["example"] = True
+        elif go_ahead:
+            t["provisional"] = list(t["missing"])
+        else:
+            blocked.append(t)
+    return blocked
 
 
 # --------------------------------------------------------------------------
@@ -691,24 +868,47 @@ def run_tools(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return results
 
 
-def _inputs_display(tool: Dict[str, Any]) -> Dict[str, str]:
-    """The inputs the planner set, keyed by human label ("Axial load": "9 kN")."""
+def _shown(p: Any, val: Any) -> str:
+    """An input value for people: "9 kN", "Hex head", "True"."""
+    if p.kind == "number" and not isinstance(val, dict):
+        val = {"value": val, "unit": p.to_dict()["unit"]}
+    if isinstance(val, dict) and "value" in val:
+        unit = next((c["label"] for c in UNIT_CHOICES.get(p.dim, []) if c["value"] == val.get("unit")),
+                    val.get("unit") or "")
+        return f"{val['value']:g} {unit}".strip() if unit != "–" else f"{val['value']:g}"
+    if p.kind == "select":
+        return next((str(o["label"]) for o in (p.options or []) if o["value"] == val), str(val))
+    return str(val)
+
+
+def _inputs_display(tool: Dict[str, Any]) -> Dict[str, Any]:
+    """The inputs of a run grouped by where they came from, keyed by human label:
+    {"inputs": given by the user, "assumed": chosen by the planner or derived (with reason),
+     "defaults_used": calculator defaults, "trial_size": trial values of sizing inputs}."""
     calc = CATALOG[tool["calculator"]]
     by_name = {p.name: p for p in calc.params}
-    out = {}
-    for name, val in tool.get("inputs", {}).items():
+    prov = tool.get("provenance")
+    out: Dict[str, Any] = {"inputs": {}, "assumed": {}, "defaults_used": {}, "trial_size": []}
+    if prov is None:                       # stored before provenance existed
+        out["inputs"] = {by_name[n].label: _shown(by_name[n], v)
+                         for n, v in tool.get("inputs", {}).items() if n in by_name}
+        return out
+    for name, meta in prov.items():
         p = by_name.get(name)
         if p is None:
             continue
-        if isinstance(val, dict) and "value" in val:
-            unit = next((c["label"] for c in UNIT_CHOICES.get(p.dim, []) if c["value"] == val.get("unit")),
-                        val.get("unit") or "")
-            shown = f"{val['value']:g} {unit}".strip() if unit != "–" else f"{val['value']:g}"
-        elif p.kind == "select":
-            shown = next((str(o["label"]) for o in (p.options or []) if o["value"] == val), str(val))
+        src = meta.get("source")
+        if src == "default":
+            if name in calc.trial:
+                out["trial_size"].append(p.label)
+            elif not p.advanced:
+                out["defaults_used"][p.label] = _shown(p, p.default)
+            continue
+        shown = _shown(p, tool["inputs"].get(name))
+        if src == "user":
+            out["inputs"][p.label] = shown
         else:
-            shown = str(val)
-        out[p.label] = shown
+            out["assumed"][p.label] = f"{shown} ({meta['why']})" if meta.get("why") else shown
     return out
 
 
@@ -719,15 +919,22 @@ def summarise(results: List[Dict[str, Any]],
     out = []
     for i, r in enumerate(results):
         tool = tools[i] if tools and i < len(tools) else None
-        inputs = _inputs_display(tool) if tool else {}
+        given = _inputs_display(tool) if tool else {}
+        origin: Dict[str, Any] = {k: v for k, v in given.items() if v}
+        if tool and tool.get("example"):
+            origin["example"] = True
+        if tool and tool.get("provisional"):
+            params = {p.name: p for p in CATALOG[tool["calculator"]].params}
+            origin["provisional"] = [f"{params[n].label} = {_shown(params[n], params[n].default)}"
+                                     for n in tool["provisional"] if n in params]
         if not r["ok"]:
-            out.append({"calculator": r["calculator"], "title": r["title"], "inputs": inputs,
+            out.append({"calculator": r["calculator"], "title": r["title"], **origin,
                         "error": r["error"]})
             continue
         res = r["result"]
         s: Dict[str, Any] = {
             "calculator": r["calculator"], "title": r["title"], "verdict": res["verdict"],
-            "inputs": inputs, "other_inputs": "calculator defaults",
+            **origin,
             "outputs": {o["label"]: f"{o['display']} {o['unit_label']}".strip() for o in res["outputs"]},
             "checks": [f"[{c['status']}] {c['label']}: {c['message']}" for c in res["checks"]],
         }
@@ -802,7 +1009,8 @@ def offline_answer(summary: List[Dict[str, Any]], configured: bool) -> str:
                 continue
             verdict = {"ok": "passes all checks", "warn": "passes with warnings",
                        "fail": "fails at least one check", "none": "computed"}[s["verdict"]]
-            lines = [f"**{s['title']}** — {verdict} with the inputs below."]
+            basis = "the calculator's example values" if s.get("example") else "the inputs below"
+            lines = [f"**{s['title']}** — {verdict} with {basis}."]
             for label, val in list(s["outputs"].items())[:4]:
                 lines.append(f"- {label}: **{val}**")
             for c in s["checks"][:3]:
@@ -847,8 +1055,18 @@ def respond(message: str, history: List[Dict[str, Any]], tier: str = "efficient"
     for n in notices:
         yield {"type": "notice", "level": "warn", "content": n}
 
+    # A deciding input left at its demo default never produces a verdict: concept questions
+    # (and offline mode) run it as a labelled example, a user who said "assume" gets a
+    # provisional answer, everyone else is asked first.
+    example_ok = not configured or str(plan.get("intent") or "").lower() == "explain"
+    go_ahead = _go_ahead(message, history)
+    blocked = _mark_or_block(tools, example_ok, go_ahead)
+
     # Key inputs missing: ask before computing anything (the UI shows the questions as a form).
     clarify = clean_clarify(plan) if configured and not tools else None
+    if blocked:
+        clarify = clarify_for_missing(blocked)
+        tools = []
     if clarify:
         yield {"type": "plan", "assumptions": [], "missing": [], "title": plan.get("title")}
         yield {"type": "clarify", **clarify}
@@ -885,7 +1103,14 @@ def respond(message: str, history: List[Dict[str, Any]], tier: str = "efficient"
                                max_tokens=1024, role="review")
             follow = parse_plan(raw) or {"tools": []}
             done = {(t["calculator"], json.dumps(t["inputs"], sort_keys=True)) for t in tools}
-            extra, extra_notes = normalise_tools({"tools": (follow.get("tools") or [])[:2]})
+            extra, extra_notes = normalise_tools(
+                {"tools": [_inherit_inputs(f, tools) for f in (follow.get("tools") or [])[:2]
+                           if isinstance(f, dict)]})
+            for t in _mark_or_block(extra, example_ok, go_ahead):
+                labels = {p.name: _plain_label(p.label) for p in CATALOG[t["calculator"]].params}
+                extra_notes.append(f"Skipped a follow-up {t['title']}: it needs "
+                                   f"{', '.join(labels[n] for n in t['missing'])}.")
+                extra.remove(t)
             extra = [t for t in extra
                      if (t["calculator"], json.dumps(t["inputs"], sort_keys=True)) not in done][:max(0, 5 - len(tools))]
             if extra:
@@ -933,4 +1158,6 @@ def respond(message: str, history: List[Dict[str, Any]], tier: str = "efficient"
     yield {"type": "final", "content": answer.strip(), "title": plan.get("title"),
            "tool_data": {"tools": tools, "results": summary,
                          "assumptions": plan.get("assumptions") or [],
-                         "missing": plan.get("missing") or [], "notices": notices}}
+                         "missing": plan.get("missing") or [], "notices": notices,
+                         # a model is configured but failed, so this answer is the offline fallback
+                         "degraded": not configured and provider() != "offline"}}

@@ -298,6 +298,7 @@ _custom_show = {"btype": ["custom"]}
 
 BEARING_LIFE = Calculator(
     id="bearing_life",
+    governing=["des_dgbb", "des_acbb", "des_crb", "des_trb", "des_sabb", "des_srb", "des_tbb", "c_C", "Fr", "Fa", "n"],
     title="Bearing rating life (ISO 281)",
     category=CATEGORY,
     summary="Basic and modified rating life, static safety and speed check for a chosen bearing, "
@@ -531,6 +532,7 @@ def _compute_selector(x: Dict[str, Any]) -> Dict[str, Any]:
 
 BEARING_SELECTOR = Calculator(
     id="bearing_selector",
+    governing=["Fr", "Fa", "n", "bore_min"],
     title="Bearing finder",
     category=CATEGORY,
     summary="Enter loads, speed, required life and the space available — get ranked standard bearings "
@@ -688,6 +690,7 @@ def _compute_required_c(x: Dict[str, Any]) -> Dict[str, Any]:
 
 BEARING_REQUIRED_C = Calculator(
     id="bearing_required_c",
+    governing=["P", "n", "L_req"],
     title="Required load rating C",
     category=CATEGORY,
     summary="Dynamic load rating needed for a target life, and the smallest bearing in every series that has it.",

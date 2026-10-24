@@ -116,7 +116,19 @@ def grade(case: Dict[str, Any], final: Dict[str, Any], word_limit: int) -> Dict[
         if not checks[f"quotes ≈{label}"]:
             notes.append(f"expected ≈{label} (±{rel:.0%}) in the answer")
 
+    # A verdict must never rest on a deciding input left at its demo default, unless the run
+    # is labelled an example or provisional.
+    unlabelled = [t["calculator"] for t in td.get("tools", [])
+                  if t.get("missing") and not (t.get("example") or t.get("provisional"))]
+    checks["no silent defaults"] = not unlabelled
+    if unlabelled:
+        notes.append(f"governing defaults used silently in {unlabelled}")
+
     low = answer.lower()
+    for phrase in expect.get("must_mention_all", []):
+        if phrase.lower() not in low:
+            checks[f"mentions “{phrase}”"] = False
+            notes.append(f"answer does not mention “{phrase}”")
     if expect.get("must_mention_any"):
         checks["mentions key term"] = any(p.lower() in low for p in expect["must_mention_any"])
         if not checks["mentions key term"]:

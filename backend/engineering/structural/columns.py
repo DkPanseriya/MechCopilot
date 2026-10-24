@@ -133,6 +133,7 @@ def _compute_column(x: Dict[str, Any]) -> Dict[str, Any]:
 
 COLUMN = Calculator(
     id="column_buckling",
+    governing=["P", "L", "ends", "d", "D", "t", "b", "h", "A", "I"],
     title="Column buckling (Euler–Johnson)",
     category="Columns",
     summary="Critical load of a compression member with Euler for slender and Johnson for intermediate columns.",

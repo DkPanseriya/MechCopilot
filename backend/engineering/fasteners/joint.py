@@ -221,6 +221,7 @@ def _compute_joint(x: Dict[str, Any]) -> Dict[str, Any]:
 
 BOLTED_JOINT = Calculator(
     id="bolted_joint",
+    governing=["thread", "FA_max", "FA_min", "lK"],
     title="Bolted joint under axial load (VDI 2230)",
     category=CATEGORY,
     summary="Bolt and plate stiffness, load factor, embedding, residual clamp force, static, fatigue and surface-pressure checks with the joint diagram.",

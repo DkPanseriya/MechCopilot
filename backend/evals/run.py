@@ -60,6 +60,9 @@ def run_case(case: Dict[str, Any], tier: str, use_judge: bool) -> Dict[str, Any]
     result["seconds"] = round(time.time() - t0, 1)
     result["notices"] = final["tool_data"].get("notices", [])
     result["answer"] = final["content"]
+    if final["tool_data"].get("degraded"):  # the offline fallback answered: nothing was evaluated
+        result["checks"]["model answered"] = False
+        result["passed"] = False
     if use_judge:
         try:
             verdict = judge(case, final, tier)

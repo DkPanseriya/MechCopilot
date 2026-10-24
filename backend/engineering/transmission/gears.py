@@ -188,6 +188,7 @@ def _compute_spur(x: Dict[str, Any]) -> Dict[str, Any]:
 
 SPUR_GEAR = Calculator(
     id="spur_gear",
+    governing=["P", "T1", "n1", "m", "z1", "z2", "b"],
     title="Spur gear pair",
     category="Gears",
     summary="Gear geometry, tooth bending (Lewis) and surface contact (Hertz) stresses with safety "

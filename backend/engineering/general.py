@@ -120,6 +120,8 @@ def _compute_round_bar(x: Dict[str, Any]) -> Dict[str, Any]:
 
 ROUND_BAR = Calculator(
     id="round_bar_combined",
+    governing=["F", "M", "T"],
+    trial=["D"],
     title="Round bar: combined loading",
     category="Stress",
     summary="Axial + bending + torsion on a solid or hollow round section, von Mises check and required diameter.",

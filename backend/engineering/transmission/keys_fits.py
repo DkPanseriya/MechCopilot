@@ -139,6 +139,8 @@ def _compute_key(x: Dict[str, Any]) -> Dict[str, Any]:
 
 PARALLEL_KEY = Calculator(
     id="parallel_key",
+    governing=["d", "T", "L_hub"],
+    trial=["L"],
     title="Parallel key (DIN 6885)",
     category="Keys & Fits",
     summary="Key size from shaft diameter, shear and surface-pressure check, and required key length.",
@@ -267,6 +269,7 @@ def _compute_iso_fits(x: Dict[str, Any]) -> Dict[str, Any]:
 
 ISO_FITS = Calculator(
     id="iso_fits",
+    governing=["size", "hole_letter", "shaft_letter"],
     title="ISO 286 limits & fits",
     category="Keys & Fits",
     summary="Hole and shaft limit deviations, clearance or interference and fit type for any ISO 286 fit.",
@@ -442,6 +445,8 @@ def _compute_interference(x: Dict[str, Any]) -> Dict[str, Any]:
 
 INTERFERENCE_FIT = Calculator(
     id="interference_fit",
+    governing=["d", "T_req", "D", "L"],
+    trial=["delta", "fit"],
     title="Interference fit (shrink / press)",
     category="Keys & Fits",
     summary="Contact pressure, torque capacity, hub and shaft stresses, press force and shrink "

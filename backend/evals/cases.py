@@ -13,6 +13,7 @@ expect keys (all optional):
   answer_values         [(target, rel_tol)] numbers the answer must quote;
                         target may be a list of alternatives (e.g. mm or in)
   must_mention_any      at least one of these terms appears in the answer
+  must_mention_all      every one of these terms appears in the answer
   must_not_mention      none of these appear
   min_grounding         share of answer numbers traced to results (default 0.9)
   format                False to skip the bold-first-line check
@@ -57,6 +58,20 @@ CASES = [
         # I = 2⁴/12 = 1.333 in⁴, E = 29e6 psi, L = 72 in: δ = PL³/(3EI) = 0.644 in = 16.4 mm
         "question": "A 6 ft steel cantilever, 2 in x 2 in solid square bar, 200 lbf at the tip. Tip deflection?",
         "expect": {"calculators_any": ["beam_analysis"], "answer_values": [([0.644, 16.4], 0.05)]},
+    },
+    {
+        "id": "cantilever_rhs_tip",
+        # 50x50x4 RHS, EN 10219 table: I = 23.7 cm⁴. δ = PL³/(3EI) = 1000 · 1.2³ / (3 · 210e9 · 23.7e-8)
+        # = 11.6 mm. The demo load position (2.5 m) lies outside this beam, so it must go to the tip.
+        "question": "1.2 m cantilever, 50x50x4 square hollow section in S355, 1 kN at the free end, "
+                    "ignore self-weight. Tip deflection?",
+        "expect": {"calculators_any": ["beam_analysis"], "answer_values": [(11.6, 0.05)]},
+    },
+    {
+        "id": "beam_without_load_asks",
+        # The span and profile are given, the load is not: the copilot must ask, not use the demo load.
+        "question": "Check an IPE 240 in S355 spanning 5 m, simply supported.",
+        "expect": {"asks": True, "calculators_any": [], "format": False},
     },
     {
         "id": "column_euler",
@@ -104,7 +119,9 @@ CASES = [
     {
         "id": "concept",
         "question": "Remind me how bending and torsion combine on a shaft.",
-        "expect": {"must_mention_any": ["von Mises", "Tresca", "equivalent"], "format": False,
+        # No shaft was described: any numbers must be presented as an example, not as the user's design.
+        "expect": {"must_mention_any": ["von Mises", "Tresca", "equivalent"], "must_mention_all": ["example"],
+                   "must_not_mention": ["your shaft", "your 40", "oversized"], "format": False,
                    "min_grounding": 0.7},
     },
     {

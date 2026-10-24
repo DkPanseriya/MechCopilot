@@ -155,6 +155,8 @@ def _compute_vessel(x: Dict[str, Any]) -> Dict[str, Any]:
 
 PRESSURE_VESSEL = Calculator(
     id="pressure_vessel",
+    governing=["p_i", "p_o", "Di"],
+    trial=["t"],
     title="Pressure vessel wall (Lamé)",
     category="Pressure Vessels",
     summary="Hoop, radial and axial stress in a cylinder or sphere under internal/external pressure, thick or thin wall.",

@@ -14,7 +14,7 @@ def _events(gen):
 # --- input normalisation ----------------------------------------------------
 
 def test_clean_inputs_accepts_numbers_dicts_and_strings():
-    cleaned, dropped = _clean_inputs("round_bar_combined", {
+    cleaned, dropped, sources = _clean_inputs("round_bar_combined", {
         "D": 40,                                   # number in the param's default unit (mm)
         "F": {"value": 12, "unit": "kN"},
         "M": "250 N*m",                            # string with unit
@@ -28,16 +28,17 @@ def test_clean_inputs_accepts_numbers_dicts_and_strings():
     assert cleaned["T"] == {"value": 1.5, "unit": "kN*m"}
     assert cleaned["material"] == "c45_qt"
     assert dropped == ["bogus"]
+    assert all(s == {"source": "assumed"} for s in sources.values())  # no source given
 
 
 def test_clean_inputs_converts_units_outside_the_choice_list():
-    cleaned, _ = _clean_inputs("round_bar_combined", {"D": "0.5 dm"})
+    cleaned, _, _ = _clean_inputs("round_bar_combined", {"D": "0.5 dm"})
     assert cleaned["D"]["unit"] == "mm"
     assert cleaned["D"]["value"] == pytest.approx(50.0)
 
 
 def test_clean_inputs_drops_wrong_dimension_and_bad_options():
-    cleaned, dropped = _clean_inputs("round_bar_combined", {"D": "5 kg", "material": "unobtainium"})
+    cleaned, dropped, _ = _clean_inputs("round_bar_combined", {"D": "5 kg", "material": "unobtainium"})
     assert "D" not in cleaned and "material" not in cleaned
     assert set(dropped) == {"D", "material"}
 
@@ -124,11 +125,14 @@ def test_failed_check_triggers_follow_up_round(monkeypatch):
         if "FOLLOW-UP" in system:
             assert "inputs" in prompt  # the follow-up sees what was run
             return json.dumps({"tools": [{"calculator": "round_bar_combined",
-                                          "inputs": {"D": 60, "M": {"value": 1500, "unit": "N*m"}},
+                                          "inputs": {"D": {"value": 60, "source": "assumed",
+                                                           "why": "next size up"}},
                                           "purpose": "next size up"}]})
         # First plan: a deliberately undersized bar that fails its check.
         return json.dumps({"title": "Axle", "tools": [{"calculator": "round_bar_combined",
-                                                       "inputs": {"D": 20, "M": {"value": 1500, "unit": "N*m"}}}]})
+                                                       "inputs": {"D": {"value": 20, "source": "user"},
+                                                                  "M": {"value": 1500, "unit": "N*m",
+                                                                        "source": "user"}}}]})
 
     monkeypatch.setattr(copilot, "llm_complete", fake_complete)
     monkeypatch.setattr(copilot, "llm_stream", lambda *a, **k: iter(["Use D = 60 mm."]))
@@ -140,6 +144,9 @@ def test_failed_check_triggers_follow_up_round(monkeypatch):
     assert verdicts[0] == "fail" and verdicts[1] in ("ok", "warn")
     assert sum(e["type"] == "tool" for e in events) == 2
     assert final["tool_data"]["results"][0]["inputs"]["Outer diameter D"] == "20 mm"
+    # the follow-up kept the user's bending moment instead of falling back to the demo default
+    assert final["tool_data"]["tools"][1]["inputs"]["M"] == {"value": 1500.0, "unit": "N*m"}
+    assert final["tool_data"]["tools"][1]["provenance"]["M"]["source"] == "user"
 
 
 def test_passing_result_skips_follow_up(monkeypatch):
@@ -147,7 +154,8 @@ def test_passing_result_skips_follow_up(monkeypatch):
     monkeypatch.setattr(copilot, "provider", lambda: "replicate")
     calls = []
     monkeypatch.setattr(copilot, "llm_complete", lambda system, *a, **k: (calls.append(system), json.dumps(
-        {"title": "x", "tools": [{"calculator": "round_bar_combined", "inputs": {"D": 60}}]}))[1])
+        {"title": "x", "tools": [{"calculator": "round_bar_combined",
+                                  "inputs": {"D": 60, "M": {"value": 200, "unit": "N*m"}}}]}))[1])
     monkeypatch.setattr(copilot, "llm_stream", lambda *a, **k: iter(["ok"]))
     _events(respond("check a 60 mm bar", [], "efficient"))
     assert len(calls) == 1

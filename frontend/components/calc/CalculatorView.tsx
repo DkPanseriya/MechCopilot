@@ -9,7 +9,7 @@ import {
     Info, Loader2, Maximize2, RotateCcw, XCircle,
 } from "lucide-react";
 import { CalcRunError, convertValue, getCatalog, initialValues, isVisible, runCalculator, tidy } from "@/lib/calcApi";
-import type { CalcParam, CalculatorDef, ParamValue, RunResult, UnitChoices } from "@/types/calculator";
+import type { CalcParam, CalculatorDef, InputSource, ParamValue, Provenance, RunResult, UnitChoices } from "@/types/calculator";
 import Plot from "@/components/calc/Plot";
 import DataTable from "@/components/calc/DataTable";
 import { Diagram } from "@/components/diagrams";
@@ -27,6 +27,25 @@ const CHECK_ICON: Record<string, { Icon: any; cls: string }> = {
 };
 
 type Values = Record<string, ParamValue>;
+
+// Chips on copilot-filled inputs. Values nobody gave are highlighted: they are the ones to check.
+const SOURCE_CHIP: Record<InputSource["source"], { label: string; cls: string; tip: string }> = {
+    user: { label: "given", cls: "border-border text-muted-foreground", tip: "Given by you" },
+    assumed: { label: "assumed", cls: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300", tip: "Chosen by the copilot" },
+    derived: { label: "derived", cls: "border-border text-muted-foreground", tip: "Follows from other inputs" },
+    default: { label: "default", cls: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400", tip: "Calculator default: nobody set this" },
+};
+
+function SourceChip({ s }: { s: InputSource }) {
+    const chip = SOURCE_CHIP[s.source];
+    if (!chip) return null;
+    return (
+        <span title={s.why ? `${chip.tip}: ${s.why}` : chip.tip}
+            className={`ml-auto text-[9px] font-medium uppercase tracking-wide px-1.5 py-px rounded border ${chip.cls}`}>
+            {chip.label}
+        </span>
+    );
+}
 
 function toPayload(params: CalcParam[], values: Values): { payload: Record<string, any>; invalid: string[] } {
     const payload: Record<string, any> = {};
@@ -79,8 +98,9 @@ function NumberField({ p, value, units, onChange, invalid }: {
     );
 }
 
-function ParamRow({ p, values, units, setValue, invalid }: {
+function ParamRow({ p, values, units, setValue, invalid, source }: {
     p: CalcParam; values: Values; units: UnitChoices; setValue: (n: string, v: ParamValue) => void; invalid: boolean;
+    source?: InputSource;
 }) {
     const v = values[p.name];
     return (
@@ -88,6 +108,7 @@ function ParamRow({ p, values, units, setValue, invalid }: {
             <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground mb-1">
                 {p.label}
                 {p.help && <span title={p.help} className="cursor-help"><Info size={11} className="opacity-70" /></span>}
+                {source && <SourceChip s={source} />}
             </span>
             {p.kind === "number" && (
                 <NumberField p={p} value={v as any} units={units} invalid={invalid} onChange={(nv) => setValue(p.name, nv)} />
@@ -135,10 +156,14 @@ function Section({ title, children, defaultOpen = true, icon }: { title: string;
     );
 }
 
-export default function CalculatorView({ calculatorId, initial, compact = false }: {
+export default function CalculatorView({ calculatorId, initial, compact = false, provenance, example, provisional }: {
     calculatorId: string; initial?: Record<string, any>; compact?: boolean;
+    provenance?: Provenance; example?: boolean; provisional?: string[];
 }) {
     const [def, setDef] = useState<CalculatorDef | null>(null);
+    // Inputs changed in the card are the user's own; a preset or reset replaces every input.
+    const [edited, setEdited] = useState<Set<string>>(new Set());
+    const [detached, setDetached] = useState(false);
     const [units, setUnits] = useState<UnitChoices>({});
     const [values, setValues] = useState<Values>({});
     const [result, setResult] = useState<RunResult | null>(null);
@@ -190,7 +215,15 @@ export default function CalculatorView({ calculatorId, initial, compact = false 
         return () => clearTimeout(t);
     }, [def, payload, invalid.length]);
 
-    const setValue = useCallback((name: string, v: ParamValue) => setValues((prev) => ({ ...prev, [name]: v })), []);
+    const setValue = useCallback((name: string, v: ParamValue) => {
+        setValues((prev) => ({ ...prev, [name]: v }));
+        setEdited((prev) => (prev.has(name) ? prev : new Set(prev).add(name)));
+    }, []);
+    const replaceAll = (next: Values) => { setValues(next); setDetached(true); };
+    const sourceOf = (name: string): InputSource | undefined => {
+        if (!provenance || detached) return undefined;
+        return edited.has(name) ? { source: "user", why: "changed in the card" } : provenance[name];
+    };
 
     if (loadError) {
         return <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-4 text-sm text-rose-500">{loadError}</div>;
@@ -227,7 +260,7 @@ export default function CalculatorView({ calculatorId, initial, compact = false 
             {def.presets.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                     {def.presets.map((pr) => (
-                        <button key={pr.label} onClick={() => setValues(initialValues(def.params, pr.values))}
+                        <button key={pr.label} onClick={() => replaceAll(initialValues(def.params, pr.values))}
                             className="text-[11px] px-2.5 py-1 rounded-full border border-border hover:border-blue-500/50 hover:text-blue-500 text-muted-foreground">
                             {pr.label}
                         </button>
@@ -239,7 +272,7 @@ export default function CalculatorView({ calculatorId, initial, compact = false 
                     <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80 mb-2">{g.name}</div>
                     <div className={`grid gap-3 sm:grid-cols-2 ${compact ? "" : "xl:grid-cols-1"}`}>
                         {g.params.map((p) => (
-                            <ParamRow key={p.name} p={p} values={values} units={units} setValue={setValue} invalid={invalid.includes(p.name)} />
+                            <ParamRow key={p.name} p={p} values={values} units={units} setValue={setValue} invalid={invalid.includes(p.name)} source={sourceOf(p.name)} />
                         ))}
                     </div>
                 </div>
@@ -252,13 +285,13 @@ export default function CalculatorView({ calculatorId, initial, compact = false 
                     {showAdvanced && (
                         <div className={`grid gap-3 mt-2 sm:grid-cols-2 ${compact ? "" : "xl:grid-cols-1"}`}>
                             {advanced.map((p) => (
-                                <ParamRow key={p.name} p={p} values={values} units={units} setValue={setValue} invalid={invalid.includes(p.name)} />
+                                <ParamRow key={p.name} p={p} values={values} units={units} setValue={setValue} invalid={invalid.includes(p.name)} source={sourceOf(p.name)} />
                             ))}
                         </div>
                     )}
                 </div>
             )}
-            <button onClick={() => setValues(initialValues(def.params))} className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+            <button onClick={() => replaceAll(initialValues(def.params))} className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
                 <RotateCcw size={11} />Reset to defaults
             </button>
         </div>
@@ -404,10 +437,23 @@ export default function CalculatorView({ calculatorId, initial, compact = false 
         </div>
     );
 
+    // Example and provisional runs say so before any number is read; editing the card clears it.
+    const labelOf = (n: string) => def.params.find((p) => p.name === n)?.label ?? n;
+    const stillDefault = (provisional ?? []).filter((n) => !edited.has(n));
+    const basis = detached ? null
+        : example && edited.size === 0 ? "Example: these are the calculator's default values, not your design. Enter your own to check it."
+        : stillDefault.length ? `Provisional: calculator defaults used for ${stillDefault.map(labelOf).join(", ")}. Enter your values to confirm the result.`
+        : null;
+
     if (compact) {
         return (
             <div className="rounded-2xl border border-border bg-card p-4 space-y-4 w-full">
                 {header}
+                {basis && (
+                    <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                        <Info size={13} className="mt-px shrink-0" />{basis}
+                    </div>
+                )}
                 {diagram}
                 {inputs}
                 {resultsBlock}
