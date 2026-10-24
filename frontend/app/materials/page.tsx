@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Search, Filter, ArrowUpDown } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, Loader2, Search } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 
 interface Material {
@@ -13,166 +13,121 @@ interface Material {
     yield_strength: number;
     ultimate_strength: number;
     elastic_modulus: number;
-    thermal_conductivity: number;
-    cost_approx_usd_per_kg: number;
     description: string;
-    source_citation?: string;
+}
+
+type SortKey = "name" | "yield_strength" | "ultimate_strength" | "elastic_modulus" | "density";
+
+const COLUMNS: { key: SortKey; label: string; unit?: string; format: (m: Material) => string }[] = [
+    { key: "yield_strength", label: "Yield", unit: "MPa", format: (m) => (m.yield_strength / 1e6).toFixed(0) },
+    { key: "ultimate_strength", label: "Tensile", unit: "MPa", format: (m) => (m.ultimate_strength / 1e6).toFixed(0) },
+    { key: "elastic_modulus", label: "E", unit: "GPa", format: (m) => (m.elastic_modulus / 1e9).toFixed(0) },
+    { key: "density", label: "Density", unit: "kg/m³", format: (m) => new Intl.NumberFormat().format(m.density) },
+];
+
+function SortIcon({ sort, k }: { sort: { key: SortKey; asc: boolean }; k: SortKey }) {
+    if (sort.key !== k) return null;
+    return sort.asc ? <ArrowUp size={12} /> : <ArrowDown size={12} />;
 }
 
 export default function MaterialsPage() {
     const [materials, setMaterials] = useState<Material[]>([]);
     const [loading, setLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState("");
-    const [minYield, setMinYield] = useState<number>(0);
-    const [categoryFilter, setCategoryFilter] = useState<string>("All");
+    const [error, setError] = useState(false);
+    const [q, setQ] = useState("");
+    const [category, setCategory] = useState("All");
+    const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: "name", asc: true });
 
     useEffect(() => {
-        fetchMaterials();
+        fetch(`${API_BASE}/api/materials/`)
+            .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+            .then(setMaterials)
+            .catch(() => setError(true))
+            .finally(() => setLoading(false));
     }, []);
 
-    const fetchMaterials = async () => {
-        try {
-            const res = await fetch(`${API_BASE}/api/materials/`);
-            const data = await res.json();
-            setMaterials(data);
-        } catch (error) {
-            console.error("Failed to load materials", error);
-        } finally {
-            setLoading(false);
-        }
-    };
+    const categories = useMemo(() => ["All", ...new Set(materials.map((m) => m.category))], [materials]);
 
-    const filteredMaterials = materials.filter(m => {
-        const matchesSearch = m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            m.sub_category.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesCategory = categoryFilter === "All" || m.category === categoryFilter;
-        // Convert Pa to MPa for easier filtering inputs if typically MPa, relying on raw logic for now
-        // Yield is in Pa. Let's assume user slider is in MPa?
-        // Let's make the slider MPa.
-        const matchesYield = (m.yield_strength / 1e6) >= minYield;
+    const rows = useMemo(() => {
+        const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+        const list = materials.filter((m) => {
+            const hay = `${m.name} ${m.sub_category} ${m.description}`.toLowerCase();
+            return (category === "All" || m.category === category) && terms.every((t) => hay.includes(t));
+        });
+        const dir = sort.asc ? 1 : -1;
+        return list.sort((a, b) => (sort.key === "name"
+            ? a.name.localeCompare(b.name) : (a[sort.key] - b[sort.key])) * dir);
+    }, [materials, q, category, sort]);
 
-        return matchesSearch && matchesCategory && matchesYield;
-    });
-
-    const formatNumber = (num: number) => new Intl.NumberFormat().format(num);
+    const sortBy = (key: SortKey) =>
+        setSort((s) => (s.key === key ? { key, asc: !s.asc } : { key, asc: key === "name" }));
 
     return (
-        <main className="flex min-h-screen bg-background text-foreground font-sans p-8 ml-64">
-            <div className="max-w-6xl mx-auto w-full">
-                <header className="mb-8">
-                    <h1 className="text-3xl font-semibold text-foreground mb-2">
-                        Materials Library
-                    </h1>
-                    <p className="text-muted-foreground">
-                        Curated database of standard engineering materials.
-                    </p>
-                </header>
+        <div className="max-w-4xl mx-auto px-6 py-10">
+            <h1 className="text-2xl font-semibold text-foreground tracking-tight">Materials</h1>
+            <p className="text-sm text-muted-foreground mt-1.5">
+                Typical properties of common engineering materials. Click a column to sort.
+            </p>
 
-                {/* Filters */}
-                <div className="bg-card border border-border rounded-xl p-4 mb-8 shadow-sm flex flex-wrap gap-4 items-end">
-                    <div className="flex-1 min-w-[200px]">
-                        <label className="text-xs font-semibold text-muted-foreground mb-1 block">Search</label>
-                        <div className="relative">
-                            <Search className="absolute left-3 top-2.5 text-muted-foreground" size={16} />
-                            <input
-                                type="text"
-                                placeholder="Search materials..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full bg-muted border border-border rounded-lg pl-9 pr-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/50 outline-none"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="w-[150px]">
-                        <label className="text-xs font-semibold text-muted-foreground mb-1 block">Category</label>
-                        <select
-                            value={categoryFilter}
-                            onChange={(e) => setCategoryFilter(e.target.value)}
-                            className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/50 outline-none"
-                        >
-                            <option value="All">All Categories</option>
-                            <option value="Metal">Metal</option>
-                            <option value="Plastic">Plastic</option>
-                        </select>
-                    </div>
-
-                    <div className="w-[200px]">
-                        <div className="flex justify-between mb-1">
-                            <label className="text-xs font-semibold text-muted-foreground">Min Yield Strength</label>
-                            <span className="text-xs font-mono text-blue-500">{minYield} MPa</span>
-                        </div>
-                        <input
-                            type="range"
-                            min="0"
-                            max="1000"
-                            step="50"
-                            value={minYield}
-                            onChange={(e) => setMinYield(Number(e.target.value))}
-                            className="w-full accent-blue-500 h-2 bg-muted rounded-lg appearance-none cursor-pointer"
-                        />
-                    </div>
+            <div className="flex flex-wrap items-center gap-3 mt-6 mb-6">
+                <div className="relative flex-1 min-w-[14rem]">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search: S355, aluminium, PEEK…"
+                        aria-label="Search materials"
+                        className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
                 </div>
-
-                {/* Grid */}
-                {loading ? (
-                    <div className="text-center py-20 text-muted-foreground">Loading library...</div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {filteredMaterials.map(m => (
-                            <div key={m.id} className="bg-card border border-border rounded-xl p-5 hover:border-blue-500/50 transition-colors shadow-sm cursor-default group relative overflow-hidden">
-                                <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                    <ArrowUpDown size={64} />
-                                </div>
-
-                                <div className="flex justify-between items-start mb-2">
-                                    <span className="inline-block px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-[10px] font-bold uppercase tracking-wider rounded">
-                                        {m.sub_category}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground font-mono">
-                                        ~${m.cost_approx_usd_per_kg.toFixed(2)}/kg
-                                    </span>
-                                </div>
-
-                                <h3 className="text-lg font-bold mb-1 group-hover:text-blue-500 transition-colors">{m.name}</h3>
-                                <div className="mb-4">
-                                    <p className="text-xs text-muted-foreground line-clamp-2">{m.description}</p>
-                                    {m.source_citation && (
-                                        <p className="text-[10px] text-blue-500/80 mt-1 font-medium bg-blue-50 dark:bg-blue-900/10 inline-block px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-900/30">
-                                            Source: {m.source_citation}
-                                        </p>
-                                    )}
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-sm">
-                                    <div>
-                                        <div className="text-[10px] text-muted-foreground uppercase">Yield Strength</div>
-                                        <div className="font-mono font-semibold">{(m.yield_strength / 1e6).toFixed(0)} <span className="text-xs text-muted-foreground font-normal">MPa</span></div>
-                                    </div>
-                                    <div>
-                                        <div className="text-[10px] text-muted-foreground uppercase">Ultimate Strength</div>
-                                        <div className="font-mono font-semibold">{(m.ultimate_strength / 1e6).toFixed(0)} <span className="text-xs text-muted-foreground font-normal">MPa</span></div>
-                                    </div>
-                                    <div>
-                                        <div className="text-[10px] text-muted-foreground uppercase">Elastic Modulus</div>
-                                        <div className="font-mono font-semibold">{(m.elastic_modulus / 1e9).toFixed(0)} <span className="text-xs text-muted-foreground font-normal">GPa</span></div>
-                                    </div>
-                                    <div>
-                                        <div className="text-[10px] text-muted-foreground uppercase">Density</div>
-                                        <div className="font-mono font-semibold">{formatNumber(m.density)} <span className="text-xs text-muted-foreground font-normal">kg/m³</span></div>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {!loading && filteredMaterials.length === 0 && (
-                    <div className="text-center py-20 bg-muted/20 rounded-xl border border-dashed border-border text-muted-foreground">
-                        No materials found matching your filters.
-                    </div>
-                )}
+                <div className="flex rounded-lg border border-border p-0.5" role="radiogroup" aria-label="Category">
+                    {categories.map((c) => (
+                        <button key={c} type="button" role="radio" aria-checked={category === c} onClick={() => setCategory(c)}
+                            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${category === c ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                            {c}
+                        </button>
+                    ))}
+                </div>
             </div>
-        </main>
+
+            {loading && <div className="text-sm text-muted-foreground flex items-center gap-2"><Loader2 size={14} className="animate-spin" />Loading…</div>}
+            {error && <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-4 text-sm text-rose-500">Could not load the materials. Is the backend running?</div>}
+
+            {!loading && !error && (
+                rows.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No material matches these filters.</p>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm tabular-nums">
+                            <thead className="text-xs text-muted-foreground">
+                                <tr>
+                                    <th className="text-left font-normal py-2 pr-4">
+                                        <button type="button" onClick={() => sortBy("name")} className="inline-flex items-center gap-1 hover:text-foreground">
+                                            Material <SortIcon sort={sort} k="name" />
+                                        </button>
+                                    </th>
+                                    {COLUMNS.map((c) => (
+                                        <th key={c.key} className="text-right font-normal py-2 pl-4 whitespace-nowrap">
+                                            <button type="button" onClick={() => sortBy(c.key)} className="inline-flex items-center gap-1 hover:text-foreground">
+                                                <SortIcon sort={sort} k={c.key} />{c.label} <span className="text-muted-foreground/70">{c.unit}</span>
+                                            </button>
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rows.map((m) => (
+                                    <tr key={m.id} className="border-t border-border/60" title={m.description}>
+                                        <td className="py-2 pr-4">
+                                            <div className="text-foreground">{m.name}</div>
+                                            <div className="text-xs text-muted-foreground">{m.sub_category}</div>
+                                        </td>
+                                        {COLUMNS.map((c) => (
+                                            <td key={c.key} className="py-2 pl-4 text-right text-foreground">{c.format(m)}</td>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )
+            )}
+        </div>
     );
 }

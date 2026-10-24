@@ -131,9 +131,9 @@ export default function Plot({ series, height = 220 }: { series: RunSeries[]; he
     return (
         <div className="w-full">
             <div className="flex items-baseline justify-between gap-3 mb-1 min-h-[18px]">
-                <div className="text-xs font-semibold text-foreground">{legend && first.group ? first.group : first.title}</div>
+                <div className="text-xs text-muted-foreground">{legend && first.group ? first.group : first.title}</div>
                 {hover !== null && (
-                    <div className="text-[11px] font-mono text-muted-foreground tabular-nums text-right">
+                    <div className="text-xs text-muted-foreground tabular-nums text-right">
                         {first.x_label} = {fmtNum(first.x[hover])} {first.x_unit}
                         {series.map((s, i) => s.y[hover] !== undefined && s.x[hover] === first.x[hover] && (
                             <span key={s.id} className={`ml-3 ${COLORS[i % COLORS.length]}`}>

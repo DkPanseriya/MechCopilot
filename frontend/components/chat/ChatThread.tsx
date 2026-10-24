@@ -251,18 +251,17 @@ export default function ChatThread({ sessionId: initialId }: { sessionId: number
                     {loadError && <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-4 text-sm text-rose-500">{loadError}</div>}
 
                     {empty && (
-                        <div className="pt-10 md:pt-16">
-                            <h1 className="text-3xl font-semibold text-foreground">What are you working on?</h1>
-                            <p className="text-muted-foreground mt-2 max-w-2xl">
-                                Describe the problem in your own words below: the part, the loads, the space you have and
-                                what you need to decide. Or pick a starting point, and I’ll ask for what the calculation needs.
+                        <div className="pt-12 md:pt-20 max-w-2xl">
+                            <h1 className="text-2xl font-semibold text-foreground tracking-tight">What are you working on?</h1>
+                            <p className="text-sm text-muted-foreground mt-2">
+                                Describe the part, the loads and what you need to decide. Or start from one of these:
                             </p>
-                            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 mt-8">
+                            <div className="flex flex-wrap gap-2 mt-6">
                                 {TOPICS.map((t) => (
                                     <button key={t.title} onClick={() => send(`I'm working on ${t.says}.`)} disabled={loading}
-                                        className="text-left rounded-xl border border-border bg-card px-4 py-3 hover:border-blue-500/50 transition-colors disabled:opacity-50">
-                                        <div className="text-sm font-medium text-foreground">{t.title}</div>
-                                        <div className="text-xs text-muted-foreground mt-0.5">{t.hint}</div>
+                                        title={t.hint}
+                                        className="rounded-full border border-border px-3.5 py-1.5 text-sm text-foreground/90 hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50">
+                                        {t.title}
                                     </button>
                                 ))}
                             </div>

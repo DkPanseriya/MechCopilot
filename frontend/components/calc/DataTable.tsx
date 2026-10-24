@@ -26,33 +26,33 @@ export default function DataTable({ table, maxRows = 12 }: { table: RunTable; ma
 
     return (
         <div>
-            <div className="text-xs font-semibold text-foreground mb-2">{table.title}</div>
-            <div className="overflow-x-auto rounded-lg border border-border">
-                <table className="w-full text-xs">
-                    <thead className="bg-muted/60 text-muted-foreground">
+            <div className="text-xs text-muted-foreground mb-1.5">{table.title}</div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                    <thead className="text-xs text-muted-foreground">
                         <tr>
                             {hasStatus && <th className="w-6" />}
                             {table.columns.map((c) => (
-                                <th key={c.key} className="px-3 py-2 text-left font-medium whitespace-nowrap">
+                                <th key={c.key} className="pr-4 py-1.5 text-left font-normal whitespace-nowrap">
                                     {c.label}{c.unit ? <span className="opacity-60"> ({c.unit})</span> : null}
                                 </th>
                             ))}
-                            {hasLinks && <th className="px-3 py-2 text-left font-medium">Source</th>}
+                            {hasLinks && <th className="pr-4 py-1.5 text-left font-normal">Source</th>}
                         </tr>
                     </thead>
-                    <tbody className="font-mono tabular-nums">
+                    <tbody className="tabular-nums">
                         {rows.map((row, i) => (
-                            <tr key={i} className={`border-t border-border ${isHighlight(row) ? "bg-blue-500/10" : ""} ${row._status === "fail" ? "opacity-50" : ""}`}>
+                            <tr key={i} className={`border-t border-border/60 ${isHighlight(row) ? "bg-blue-500/[0.06] font-medium" : ""} ${row._status === "fail" ? "text-muted-foreground" : ""}`}>
                                 {hasStatus && (
-                                    <td className="pl-3">
+                                    <td className="pr-2 w-4">
                                         <span className={`inline-block w-2 h-2 rounded-full ${STATUS_DOT[row._status] || "bg-muted"}`} />
                                     </td>
                                 )}
                                 {table.columns.map((c) => (
-                                    <td key={c.key} className="px-3 py-1.5 whitespace-nowrap">{cell(row[c.key])}</td>
+                                    <td key={c.key} className="pr-4 py-1.5 whitespace-nowrap">{cell(row[c.key])}</td>
                                 ))}
                                 {hasLinks && (
-                                    <td className="px-3 py-1.5 whitespace-nowrap font-sans">
+                                    <td className="pr-4 py-1.5 whitespace-nowrap">
                                         {(row._links || []).map((l: { label: string; url: string }) => (
                                             <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer"
                                                 className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-400 mr-3">
@@ -67,9 +67,9 @@ export default function DataTable({ table, maxRows = 12 }: { table: RunTable; ma
                 </table>
             </div>
             <div className="flex items-center justify-between mt-1.5">
-                {table.note ? <p className="text-[11px] text-muted-foreground italic">{table.note}</p> : <span />}
+                {table.note ? <p className="text-xs text-muted-foreground">{table.note}</p> : <span />}
                 {table.rows.length > maxRows && (
-                    <button onClick={() => setExpanded(!expanded)} className="text-[11px] text-blue-500 hover:text-blue-400 shrink-0 ml-3">
+                    <button onClick={() => setExpanded(!expanded)} className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 decoration-border shrink-0 ml-3">
                         {expanded ? "Show fewer" : `Show all ${table.rows.length}`}
                     </button>
                 )}

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { BlockMath, InlineMath } from "react-katex";
 import "katex/dist/katex.min.css";
 import {
-    AlertTriangle, BookOpen, CheckCircle2, ChevronDown, ChevronRight, ExternalLink,
+    AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, ExternalLink,
     Info, Loader2, Maximize2, RotateCcw, XCircle,
 } from "lucide-react";
 import { CalcRunError, convertValue, getCatalog, initialValues, isVisible, runCalculator, tidy } from "@/lib/calcApi";
@@ -13,12 +13,6 @@ import type { CalcParam, CalculatorDef, InputSource, ParamValue, Provenance, Run
 import Plot from "@/components/calc/Plot";
 import DataTable from "@/components/calc/DataTable";
 import { Diagram } from "@/components/diagrams";
-
-const VERDICT: Record<string, { label: string; cls: string; Icon: any }> = {
-    ok: { label: "Passes", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30", Icon: CheckCircle2 },
-    warn: { label: "Check warnings", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30", Icon: AlertTriangle },
-    fail: { label: "Fails", cls: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30", Icon: XCircle },
-};
 
 const CHECK_ICON: Record<string, { Icon: any; cls: string }> = {
     ok: { Icon: CheckCircle2, cls: "text-emerald-500" },
@@ -41,7 +35,7 @@ function SourceChip({ s }: { s: InputSource }) {
     if (!chip) return null;
     return (
         <span title={s.why ? `${chip.tip}: ${s.why}` : chip.tip}
-            className={`ml-auto text-[9px] font-medium uppercase tracking-wide px-1.5 py-px rounded border ${chip.cls}`}>
+            className={`ml-auto text-[10px] font-medium px-1.5 rounded border ${chip.cls}`}>
             {chip.label}
         </span>
     );
@@ -77,7 +71,7 @@ function NumberField({ p, value, units, onChange, invalid }: {
         <div className={`flex items-stretch rounded-lg border bg-background overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/40 ${invalid ? "border-rose-500" : "border-border"}`}>
             <input
                 inputMode="decimal"
-                className="flex-1 min-w-0 bg-transparent px-3 py-2 text-sm font-mono tabular-nums focus:outline-none"
+                className="flex-1 min-w-0 bg-transparent px-3 py-1.5 text-sm tabular-nums focus:outline-none"
                 value={String(value.value)}
                 onChange={(e) => onChange({ value: e.target.value, unit: value.unit })}
                 aria-label={p.label}
@@ -86,13 +80,13 @@ function NumberField({ p, value, units, onChange, invalid }: {
                 <select
                     value={value.unit}
                     onChange={(e) => changeUnit(e.target.value)}
-                    className="bg-muted/60 text-muted-foreground text-xs px-2 border-l border-border focus:outline-none cursor-pointer"
+                    className="bg-transparent text-muted-foreground text-xs pl-1 pr-2 focus:outline-none cursor-pointer"
                     aria-label={`${p.label} unit`}
                 >
                     {choices.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
                 </select>
             ) : choices[0]?.label && choices[0].label !== "–" ? (
-                <span className="bg-muted/60 text-muted-foreground text-xs px-2 flex items-center border-l border-border">{choices[0].label}</span>
+                <span className="text-muted-foreground text-xs pr-3 flex items-center">{choices[0].label}</span>
             ) : null}
         </div>
     );
@@ -105,7 +99,7 @@ function ParamRow({ p, values, units, setValue, invalid, source }: {
     const v = values[p.name];
     return (
         <label className="block">
-            <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground mb-1">
+            <span className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
                 {p.label}
                 {p.help && <span title={p.help} className="cursor-help"><Info size={11} className="opacity-70" /></span>}
                 {source && <SourceChip s={source} />}
@@ -120,7 +114,7 @@ function ParamRow({ p, values, units, setValue, invalid, source }: {
                         const opt = p.options?.find((o) => String(o.value) === e.target.value);
                         setValue(p.name, (opt?.value ?? e.target.value) as any);
                     }}
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 >
                     {p.options?.map((o) => <option key={String(o.value)} value={String(o.value)}>{o.label}</option>)}
                 </select>
@@ -143,17 +137,33 @@ function ParamRow({ p, values, units, setValue, invalid, source }: {
     );
 }
 
-function Section({ title, children, defaultOpen = true, icon }: { title: string; children: React.ReactNode; defaultOpen?: boolean; icon?: React.ReactNode }) {
+/** A quiet, closed-by-default row: label, optional count, chevron. */
+function Disclosure({ title, count, defaultOpen = false, children }: {
+    title: string; count?: number | string; defaultOpen?: boolean; children: React.ReactNode;
+}) {
     const [open, setOpen] = useState(defaultOpen);
     return (
-        <div className="border-t border-border pt-3">
-            <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 text-xs font-semibold text-foreground mb-2 hover:text-blue-500">
+        <div className="border-t border-border/70">
+            <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
+                className="w-full flex items-center gap-2 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
                 {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                {icon}{title}
+                <span className={open ? "text-foreground" : ""}>{title}</span>
+                {count !== undefined && <span className="text-xs text-muted-foreground/70 tabular-nums">{count}</span>}
             </button>
-            {open && children}
+            {open && <div className="pb-4 pl-[22px]">{children}</div>}
         </div>
     );
+}
+
+/** "Passes all 4 checks", "Fails 1 of 4 checks": the answer in words. */
+function verdictText(checks: RunResult["checks"]): string | null {
+    if (!checks.length) return null;
+    const n = checks.length;
+    const fail = checks.filter((c) => c.status === "fail").length;
+    const warn = checks.filter((c) => c.status === "warn").length;
+    if (fail) return `Fails ${fail} of ${n} check${n > 1 ? "s" : ""}`;
+    if (warn) return `Passes, with ${warn} warning${warn > 1 ? "s" : ""}`;
+    return n === 1 ? "Passes the check" : `Passes all ${n} checks`;
 }
 
 export default function CalculatorView({
@@ -179,7 +189,7 @@ export default function CalculatorView({
     const [error, setError] = useState<string | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [running, setRunning] = useState(false);
-    const [showAdvanced, setShowAdvanced] = useState(false);
+    const [showAll, setShowAll] = useState(false);
     const abortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
@@ -193,7 +203,7 @@ export default function CalculatorView({
                 setUnits(cat.unit_choices);
                 setValues(initialValues(d.params, initial || {}));
             })
-            .catch(() => alive && setLoadError("Could not reach the calculation server. Is the backend running on port 8001?"));
+            .catch(() => alive && setLoadError("Could not reach the calculation server. Is the backend running?"));
         return () => { alive = false; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [calculatorId]);
@@ -240,128 +250,157 @@ export default function CalculatorView({
         return <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-4 text-sm text-rose-500">{loadError}</div>;
     }
     if (!def) {
-        return <div className="rounded-xl border border-border p-6 text-sm text-muted-foreground flex items-center gap-2"><Loader2 size={14} className="animate-spin" />Loading calculator…</div>;
+        return <div className="py-6 text-sm text-muted-foreground flex items-center gap-2"><Loader2 size={14} className="animate-spin" />Loading calculator…</div>;
     }
 
-    // Group visible params, preserving definition order.
+    // Key inputs are the ones that decide the result (the calculator's governing inputs and the
+    // size being checked); everything else sits under "All inputs". An invalid field is never hidden.
     const visible = def.params.filter((p) => isVisible(p, values));
-    const basic = visible.filter((p) => !p.advanced);
-    const advanced = visible.filter((p) => p.advanced);
+    const governing = new Set([...(def.governing ?? []), ...(def.trial ?? [])]);
+    let key = visible.filter((p) => governing.has(p.name));
+    if (!key.length) key = visible.filter((p) => !p.advanced).slice(0, 4);
+    const keyNames = new Set(key.map((p) => p.name));
+    const rest = visible.filter((p) => !keyNames.has(p.name));
     const groups: { name: string; params: CalcParam[] }[] = [];
-    for (const p of basic) {
+    for (const p of rest.filter((q) => !q.advanced)) {
         const g = p.group || "Inputs";
         let grp = groups.find((x) => x.name === g);
         if (!grp) { grp = { name: g, params: [] }; groups.push(grp); }
         grp.params.push(p);
     }
+    const restAdvanced = rest.filter((p) => p.advanced);
+    if (restAdvanced.length) groups.push({ name: "Advanced", params: restAdvanced });
+    const allOpen = showAll || rest.some((p) => invalid.includes(p.name));
 
     const primary = result?.outputs.filter((o) => o.primary) ?? [];
     const secondary = result?.outputs.filter((o) => !o.primary) ?? [];
-    const verdict = result && VERDICT[result.verdict];
+    const verdict = result ? verdictText(result.checks) : null;
+    const status = result?.verdict ?? "none";
+    // Selection tables (rows with a pass/fail status) are part of the answer; the rest are detail.
+    const answerTables = result?.tables.filter((t) => t.rows.some((r) => r._status)) ?? [];
+    const detailTables = result?.tables.filter((t) => !answerTables.includes(t)) ?? [];
 
     const plotGroups: { key: string; series: RunResult["series"] }[] = [];
     for (const s of result?.series ?? []) {
-        const key = s.group || s.id;
-        const g = plotGroups.find((x) => x.key === key);
-        if (g) g.series.push(s); else plotGroups.push({ key, series: [s] });
+        const k = s.group || s.id;
+        const g = plotGroups.find((x) => x.key === k);
+        if (g) g.series.push(s); else plotGroups.push({ key: k, series: [s] });
     }
+
+    const field = (p: CalcParam) => (
+        <ParamRow key={p.name} p={p} values={values} units={units} setValue={setValue}
+            invalid={invalid.includes(p.name)} source={sourceOf(p.name)} />
+    );
 
     const inputs = (
         <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">{key.map(field)}</div>
             {def.presets.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                    {def.presets.map((pr) => (
-                        <button key={pr.label} onClick={() => replaceAll(initialValues(def.params, pr.values))}
-                            className="text-[11px] px-2.5 py-1 rounded-full border border-border hover:border-blue-500/50 hover:text-blue-500 text-muted-foreground">
-                            {pr.label}
-                        </button>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                    Try{" "}
+                    {def.presets.map((pr, i) => (
+                        <span key={pr.label}>
+                            {i > 0 && <span className="mx-1 text-muted-foreground/50">·</span>}
+                            <button type="button" onClick={() => replaceAll(initialValues(def.params, pr.values))}
+                                className="text-foreground/80 underline decoration-border underline-offset-2 hover:text-blue-500 hover:decoration-blue-500/50">
+                                {pr.label}
+                            </button>
+                        </span>
                     ))}
-                </div>
+                </p>
             )}
-            {groups.map((g) => (
-                <div key={g.name}>
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80 mb-2">{g.name}</div>
-                    <div className={`grid gap-3 sm:grid-cols-2 ${compact ? "" : "xl:grid-cols-1"}`}>
-                        {g.params.map((p) => (
-                            <ParamRow key={p.name} p={p} values={values} units={units} setValue={setValue} invalid={invalid.includes(p.name)} source={sourceOf(p.name)} />
-                        ))}
-                    </div>
-                </div>
-            ))}
-            {advanced.length > 0 && (
+            {rest.length > 0 && (
                 <div>
-                    <button onClick={() => setShowAdvanced(!showAdvanced)} className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground">
-                        {showAdvanced ? <ChevronDown size={13} /> : <ChevronRight size={13} />}Advanced ({advanced.length})
+                    <button type="button" onClick={() => setShowAll(!allOpen)} aria-expanded={allOpen}
+                        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+                        {allOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        All inputs <span className="text-xs text-muted-foreground/70 tabular-nums">{rest.length}</span>
                     </button>
-                    {showAdvanced && (
-                        <div className={`grid gap-3 mt-2 sm:grid-cols-2 ${compact ? "" : "xl:grid-cols-1"}`}>
-                            {advanced.map((p) => (
-                                <ParamRow key={p.name} p={p} values={values} units={units} setValue={setValue} invalid={invalid.includes(p.name)} source={sourceOf(p.name)} />
+                    {allOpen && (
+                        <div className="mt-3 space-y-5">
+                            {groups.map((g) => (
+                                <div key={g.name}>
+                                    <div className="text-xs font-medium text-foreground/80 mb-2">{g.name}</div>
+                                    <div className="grid gap-3 sm:grid-cols-2">{g.params.map(field)}</div>
+                                </div>
                             ))}
+                            <button type="button" onClick={() => replaceAll(initialValues(def.params))}
+                                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                                <RotateCcw size={11} />Reset to defaults
+                            </button>
                         </div>
                     )}
                 </div>
             )}
-            <button onClick={() => replaceAll(initialValues(def.params))} className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-                <RotateCcw size={11} />Reset to defaults
-            </button>
         </div>
     );
 
-    const resultsBlock = (
-        <div className="space-y-4">
+    // Example and provisional runs say so before any number is read; editing the card clears it.
+    const labelOf = (n: string) => def.params.find((p) => p.name === n)?.label ?? n;
+    const stillDefault = (provisional ?? []).filter((n) => !edited.has(n));
+    const basis = detached ? null
+        : example && edited.size === 0 ? "Example values, not your design. Enter your own to check it."
+        : stillDefault.length ? `Provisional: defaults used for ${stillDefault.map(labelOf).join(", ")}.`
+        : null;
+
+    const tone = status === "fail" ? "text-rose-600 dark:text-rose-400"
+        : status === "warn" ? "text-amber-600 dark:text-amber-400"
+        : "text-emerald-600 dark:text-emerald-400";
+    const VerdictIcon = status === "fail" ? XCircle : status === "warn" ? AlertTriangle : CheckCircle2;
+
+    const answer = (
+        <div className={`space-y-4 transition-opacity duration-200 ${running ? "opacity-60" : ""}`}>
             {error && (
                 <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-sm text-rose-500 flex items-start gap-2">
                     <XCircle size={15} className="mt-0.5 shrink-0" />{error}
                 </div>
             )}
+            {verdict && (
+                <div className={`flex items-center gap-2 text-base font-semibold ${tone}`}>
+                    <VerdictIcon size={18} className="shrink-0" />{verdict}
+                </div>
+            )}
+            {basis && (
+                <p className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-1.5">
+                    <Info size={13} className="mt-px shrink-0" />{basis}
+                </p>
+            )}
             {primary.length > 0 && (
-                <div className={`grid gap-2 ${primary.length >= 3 ? "grid-cols-2 xl:grid-cols-3" : "grid-cols-2"} ${running ? "opacity-70" : ""} transition-opacity`}>
+                <dl className="grid gap-x-8 gap-y-3 grid-cols-[repeat(auto-fit,minmax(9rem,1fr))]">
                     {primary.map((o) => {
-                        // Text results (designations, fit types) read better in the UI font.
+                        // Text results (designations, fit types) read better smaller.
                         const isText = o.value === null && !/^[-+]?[\d.∞–]/.test(o.display);
                         return (
-                            <div key={o.name} className={`rounded-xl border border-border bg-muted/30 px-3 py-2.5 ${isText && o.display.length > 18 ? "col-span-2" : ""}`}>
-                                <div className="text-[11px] text-muted-foreground truncate" title={o.label}>{o.label}</div>
-                                <div className="flex items-baseline gap-1.5 mt-0.5">
-                                    <span className={isText
-                                        ? "text-sm font-semibold text-foreground leading-snug"
-                                        : "text-xl font-semibold font-mono tabular-nums text-foreground"}>{o.display}</span>
-                                    <span className="text-xs text-muted-foreground">{o.value !== null ? o.unit_label : ""}</span>
-                                </div>
+                            <div key={o.name} className="min-w-0">
+                                <dt className="text-xs text-muted-foreground truncate" title={o.label}>{o.label}</dt>
+                                <dd className="mt-0.5 flex items-baseline gap-1">
+                                    <span className={`font-semibold text-foreground tabular-nums ${isText ? "text-base" : "text-2xl tracking-tight"}`}>{o.display}</span>
+                                    {o.value !== null && <span className="text-sm text-muted-foreground">{o.unit_label}</span>}
+                                </dd>
                             </div>
                         );
                     })}
-                </div>
+                </dl>
             )}
             {result && result.checks.length > 0 && (
-                <ul className="space-y-1.5">
+                <ul className="space-y-1">
                     {result.checks.map((c, i) => {
                         const { Icon, cls } = CHECK_ICON[c.status];
                         return (
                             <li key={i} className="flex items-start gap-2 text-sm">
-                                <Icon size={15} className={`${cls} mt-0.5 shrink-0`} />
-                                <span><span className="font-medium text-foreground">{c.label}.</span> <span className="text-muted-foreground">{c.message}</span></span>
+                                <Icon size={14} className={`${cls} mt-[3px] shrink-0`} />
+                                <span><span className="text-foreground">{c.label}</span> <span className="text-muted-foreground">{c.message}</span></span>
                             </li>
                         );
                     })}
                 </ul>
             )}
-            {secondary.length > 0 && (
-                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
-                    {secondary.map((o) => (
-                        <div key={o.name} className="flex justify-between gap-3 text-sm border-b border-border/60 py-1">
-                            <dt className="text-muted-foreground truncate" title={o.help || o.label}>{o.label}</dt>
-                            <dd className="font-mono tabular-nums text-foreground whitespace-nowrap">{o.display} <span className="text-muted-foreground text-xs">{o.value !== null ? o.unit_label : ""}</span></dd>
-                        </div>
-                    ))}
-                </dl>
-            )}
+            {answerTables.map((t, i) => <DataTable key={i} table={t} maxRows={compact ? 5 : 8} />)}
             {result && result.links.length > 0 && (
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
                     {result.links.map((l) => (
                         <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white">
+                            className="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline">
                             {l.label}<ExternalLink size={12} />
                         </a>
                     ))}
@@ -371,28 +410,44 @@ export default function CalculatorView({
     );
 
     const diagram = def.diagram && result?.diagram ? (
-        <div className="rounded-2xl border border-border bg-muted/20 p-3 sm:p-4">
-            <div className={`mx-auto ${compact ? "max-w-2xl" : "max-w-3xl"}`}>
-                <Diagram id={def.diagram} params={result.diagram.params} inputs={values} />
-            </div>
+        <div className="mx-auto max-w-2xl">
+            <Diagram id={def.diagram} params={result.diagram.params} inputs={values} />
         </div>
     ) : null;
 
-    const extras = result && (
-        <div className="space-y-4">
-            {plotGroups.map((g) => (
-                <div key={g.key} className="rounded-xl border border-border p-3"><Plot series={g.series} /></div>
-            ))}
-            {result.tables.map((t, i) => <DataTable key={i} table={t} maxRows={compact ? 6 : 12} />)}
+    const details = result && (
+        <div>
+            {secondary.length > 0 && (
+                <Disclosure title="All results" count={secondary.length}>
+                    <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8">
+                        {secondary.map((o) => (
+                            <div key={o.name} className="flex justify-between gap-3 text-sm py-1">
+                                <dt className="text-muted-foreground truncate" title={o.help || o.label}>{o.label}</dt>
+                                <dd className="tabular-nums text-foreground whitespace-nowrap">{o.display} <span className="text-muted-foreground text-xs">{o.value !== null ? o.unit_label : ""}</span></dd>
+                            </div>
+                        ))}
+                    </dl>
+                </Disclosure>
+            )}
+            {plotGroups.length > 0 && (
+                <Disclosure title="Charts" count={plotGroups.length}>
+                    <div className="space-y-6">{plotGroups.map((g) => <Plot key={g.key} series={g.series} />)}</div>
+                </Disclosure>
+            )}
+            {detailTables.length > 0 && (
+                <Disclosure title="Tables" count={detailTables.length}>
+                    <div className="space-y-4">{detailTables.map((t, i) => <DataTable key={i} table={t} maxRows={12} />)}</div>
+                </Disclosure>
+            )}
             {result.notes.length > 0 && (
-                <ul className="space-y-1">
-                    {result.notes.map((n, i) => (
-                        <li key={i} className="text-xs text-muted-foreground flex gap-2"><Info size={12} className="mt-0.5 shrink-0" />{n}</li>
-                    ))}
-                </ul>
+                <Disclosure title="Notes" count={result.notes.length}>
+                    <ul className="space-y-1.5 max-w-prose">
+                        {result.notes.map((n, i) => <li key={i} className="text-sm text-muted-foreground">{n}</li>)}
+                    </ul>
+                </Disclosure>
             )}
             {result.steps.length > 0 && (
-                <Section title="Worked solution" defaultOpen={!compact} icon={<BookOpen size={13} className="mr-0.5" />}>
+                <Disclosure title="Worked solution" count={`${result.steps.length} steps`}>
                     <ol className="space-y-1.5">
                         {result.steps.map((s, i) => (
                             <li key={i} className="grid grid-cols-[1fr_auto] gap-3 items-baseline text-sm">
@@ -401,87 +456,63 @@ export default function CalculatorView({
                                     <span className="overflow-x-auto"><InlineMath math={s.latex} /></span>
                                 </div>
                                 {s.display !== undefined && (
-                                    <span className="font-mono tabular-nums text-foreground whitespace-nowrap">= {s.display} <span className="text-muted-foreground text-xs">{s.unit_label}</span></span>
+                                    <span className="tabular-nums text-foreground whitespace-nowrap">= {s.display} <span className="text-muted-foreground text-xs">{s.unit_label}</span></span>
                                 )}
                             </li>
                         ))}
                     </ol>
-                </Section>
+                </Disclosure>
             )}
             {(def.formulas.length > 0 || def.references.length > 0) && (
-                <Section title="Theory & references" defaultOpen={false}>
-                    {def.description && <p className="text-sm text-muted-foreground mb-3 leading-relaxed">{def.description}</p>}
+                <Disclosure title="Theory and references">
+                    {def.description && <p className="text-sm text-muted-foreground mb-3 leading-relaxed max-w-prose">{def.description}</p>}
                     <div className="space-y-1">
                         {def.formulas.map((f, i) => <div key={i} className="overflow-x-auto"><BlockMath math={f} /></div>)}
                     </div>
                     {def.references.length > 0 && (
                         <ul className="mt-3 space-y-0.5">
-                            {def.references.map((r) => <li key={r} className="text-xs text-muted-foreground">· {r}</li>)}
+                            {def.references.map((r) => <li key={r} className="text-xs text-muted-foreground">{r}</li>)}
                         </ul>
                     )}
-                </Section>
+                </Disclosure>
             )}
         </div>
     );
 
-    const header = (
-        <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-blue-500 mb-1">{def.category}</div>
-                <h2 className={`${compact ? "text-base" : "text-2xl"} font-semibold text-foreground leading-tight`}>{def.title}</h2>
-                <p className="text-sm text-muted-foreground mt-1">{def.summary}</p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-                {running && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
-                {verdict && (
-                    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full border ${verdict.cls}`}>
-                        <verdict.Icon size={13} />{verdict.label}
-                    </span>
-                )}
-                {compact && (
-                    <Link href={`/calculators/view?id=${def.id}`} title="Open full calculator"
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted">
-                        <Maximize2 size={14} />
-                    </Link>
-                )}
-            </div>
-        </div>
-    );
-
-    // Example and provisional runs say so before any number is read; editing the card clears it.
-    const labelOf = (n: string) => def.params.find((p) => p.name === n)?.label ?? n;
-    const stillDefault = (provisional ?? []).filter((n) => !edited.has(n));
-    const basis = detached ? null
-        : example && edited.size === 0 ? "Example: these are the calculator's default values, not your design. Enter your own to check it."
-        : stillDefault.length ? `Provisional: calculator defaults used for ${stillDefault.map(labelOf).join(", ")}. Enter your values to confirm the result.`
-        : null;
-
     if (compact) {
+        // In a chat reply: the answer first; inputs, drawing and details one click away.
         return (
-            <div className="rounded-2xl border border-border bg-card p-4 space-y-4 w-full">
-                {header}
-                {basis && (
-                    <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-                        <Info size={13} className="mt-px shrink-0" />{basis}
+            <div className="rounded-xl border border-border bg-card px-4 pt-3 w-full">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                    <h3 className="text-sm font-medium text-foreground truncate">{def.title}</h3>
+                    <div className="flex items-center gap-1 shrink-0">
+                        {running && <Loader2 size={13} className="animate-spin text-muted-foreground" />}
+                        <Link href={`/calculators/view?id=${def.id}`} title="Open full calculator"
+                            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted">
+                            <Maximize2 size={13} />
+                        </Link>
                     </div>
-                )}
-                {diagram}
-                {inputs}
-                {resultsBlock}
-                {extras}
+                </div>
+                <div className="pb-4">{answer}</div>
+                <Disclosure title="Inputs" count={key.length + rest.length} defaultOpen={Boolean(basis)}>{inputs}</Disclosure>
+                {diagram && <Disclosure title="Diagram">{diagram}</Disclosure>}
+                {details}
             </div>
         );
     }
 
     return (
-        <div className="space-y-6">
-            {header}
-            {diagram}
-            <div className="grid gap-6 xl:grid-cols-[minmax(300px,340px)_1fr]">
-                <aside className="xl:sticky xl:top-6 self-start rounded-2xl border border-border bg-card p-4">{inputs}</aside>
-                <div className="space-y-5 min-w-0">
-                    <div className="rounded-2xl border border-border bg-card p-4">{resultsBlock}</div>
-                    {extras}
+        <div className="space-y-8">
+            <header className="max-w-3xl">
+                <h1 className="text-2xl font-semibold text-foreground tracking-tight text-balance">{def.title}</h1>
+                <p className="text-sm text-muted-foreground mt-1.5 max-w-prose">{def.summary}</p>
+            </header>
+            <div className="grid gap-10 xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+                <section aria-label="Inputs" className="xl:sticky xl:top-8 self-start max-w-2xl">{inputs}</section>
+                <div className="min-w-0 space-y-8">
+                    <section aria-label="Result">{answer}</section>
+                    {diagram && <section aria-label="Diagram">{diagram}</section>}
+                    {details}
                 </div>
             </div>
         </div>
