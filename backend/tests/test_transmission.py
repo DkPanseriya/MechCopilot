@@ -201,3 +201,46 @@ def test_spur_gear_stresses():
 def test_spur_gear_bad_teeth():
     with pytest.raises(CalcError):
         run("spur_gear", {"z1": 5})
+
+
+# --- Drive loads -------------------------------------------------------------
+# Hand calculations; ω = 2πn/60.
+
+def test_drive_loads_conveyor_chain():
+    # 5.5 kW at 90 rpm: T = 5500 / 9.4248 = 583.6 N·m; sprocket Ø200: Ft = 2T/D = 5836 N = shaft load
+    r = run("drive_loads", {"P": {"value": 5.5, "unit": "kW"}, "n": 90, "element": "chain", "D": 200})
+    assert out(r, "T") == pytest.approx(583.6, rel=1e-3)
+    assert out(r, "Fs") == pytest.approx(5.836, rel=1e-3)      # displayed in kN
+
+
+def test_drive_loads_v_belt_tensions():
+    # 7.5 kW at 1450 rpm, KA 1.2: Td = 59.27 N·m; Ø125: Ft = 948.3 N
+    # θ = 165°, μ' = 0.5: F1/F2 = e^(0.5·2.8798) = 4.220; F2 = 294.5 N; F1 = 1242.8 N
+    # Fs = √(F1² + F2² − 2F1F2 cos θ) = 1529 N
+    r = run("drive_loads", {"P": {"value": 7.5, "unit": "kW"}, "n": 1450, "KA": 1.2, "element": "v_belt",
+                            "D": 125, "theta": {"value": 165, "unit": "deg"}})
+    assert out(r, "F2") == pytest.approx(0.2945, rel=2e-3)
+    assert out(r, "F1") == pytest.approx(1.2428, rel=2e-3)
+    assert out(r, "Fs") == pytest.approx(1.529, rel=2e-3)
+
+
+def test_drive_loads_helical_gear_forces():
+    # 15 kW at 1450 rpm: T = 98.79 N·m; Ø60: Ft = 3293 N
+    # αn = 20°, β = 15°: Fr = Ft tan20°/cos15° = 1241 N; Fa = Ft tan15° = 882.4 N
+    r = run("drive_loads", {"P": {"value": 15, "unit": "kW"}, "n": 1450, "element": "helical", "D": 60})
+    assert out(r, "Ft") == pytest.approx(3.293, rel=2e-3)
+    assert out(r, "Fr") == pytest.approx(1.241, rel=2e-3)
+    assert out(r, "Fa") == pytest.approx(0.8824, rel=2e-3)
+
+
+def test_drive_loads_spur_has_no_axial_force_and_coupling_no_shaft_load():
+    spur = run("drive_loads", {"input": "torque", "T": 100, "n": 1000, "element": "spur", "D": 100})
+    assert out(spur, "Fr") == pytest.approx(2.0 * math.tan(math.radians(20)), rel=1e-3)
+    assert not any(o["name"] == "Fa" for o in spur["outputs"])
+    coupling = run("drive_loads", {"element": "coupling"})
+    assert out(coupling, "Fs") == 0
+
+
+def test_drive_loads_rejects_zero_speed():
+    with pytest.raises(CalcError):
+        run("drive_loads", {"n": 0})
